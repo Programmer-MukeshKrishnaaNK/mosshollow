@@ -17,6 +17,12 @@ import type { Input } from '../core/input.ts';
 import type { Rect } from '../core/math.ts';
 import { mirrored, sprite, type Sprite } from '../art/pixel.ts';
 import {
+  DOWN_RAISE, DOWN_STRIKE, SIDE_RAISE, SIDE_STRIKE, UP_RAISE, UP_STRIKE,
+} from '../art/playerTool.art.ts';
+import { CAN_POUR, CAN_UP, HOE_DOWN, HOE_UP } from '../art/tools.art.ts';
+import type { ToolKind } from '../data/items.ts';
+import { CAN_ANCHORS, HOE_ANCHORS, TOOL_TIMING, type FacingAnchors } from './toolPose.ts';
+import {
   DOWN_PASS, DOWN_STEP_A, DOWN_STEP_B,
   SIDE_PASS, SIDE_STEP_A, SIDE_STEP_B,
   UP_PASS, UP_STEP_A, UP_STEP_B,
@@ -24,6 +30,9 @@ import {
 import { Animator, type Clip } from './animator.ts';
 
 export type Facing = 'down' | 'up' | 'left' | 'right';
+
+/** Where a swing is in its arc. */
+export type SwingPhase = 'raise' | 'hold' | 'strike' | 'recover';
 
 const WALK_SPEED = 46;
 const RUN_SPEED = 79;
@@ -58,10 +67,32 @@ export class Player {
 
   readonly anim: Animator;
   private sprites: Record<Facing, Sprite[]>;
+  private poses: Record<Facing, { raise: Sprite; strike: Sprite }>;
+  private toolArt: Record<ToolKind, { raise: Sprite; strike: Sprite; raiseFlip: Sprite; strikeFlip: Sprite }>;
   private breath = 0;
   /** Distance walked since the last footfall, for step effects. */
   private stepAccum = 0;
   onFootstep: ((x: number, y: number) => void) | null = null;
+
+  // --- tool use ------------------------------------------------------------
+  private swingTool: ToolKind | null = null;
+  private phase: SwingPhase = 'raise';
+  private phaseTime = 0;
+  /** Fires once, at the moment the tool reaches the ground. */
+  onToolImpact: ((tool: ToolKind) => void) | null = null;
+  /** Fires every frame of a sustained tool, e.g. while the can is pouring. */
+  onToolSustain: ((tool: ToolKind, dt: number) => void) | null = null;
+  /** Fires when the swing finishes and control returns. */
+  onToolEnd: ((tool: ToolKind) => void) | null = null;
+
+  get swinging(): boolean {
+    return this.swingTool !== null;
+  }
+
+  /** True while the swing owns the character — movement is locked out. */
+  get swingLocked(): boolean {
+    return this.swingTool !== null && this.phase !== 'recover';
+  }
 
   constructor(x: number, y: number) {
     this.x = x;
@@ -71,7 +102,83 @@ export class Player {
     const right = [SIDE_PASS, SIDE_STEP_A, SIDE_STEP_B].map((m) => sprite(m, 8, 23));
     const left = right.map(mirrored);
     this.sprites = { down, up, right, left };
+
+    const sideRaise = sprite(SIDE_RAISE, 8, 23);
+    const sideStrike = sprite(SIDE_STRIKE, 8, 23);
+    this.poses = {
+      down: { raise: sprite(DOWN_RAISE, 8, 23), strike: sprite(DOWN_STRIKE, 8, 23) },
+      up: { raise: sprite(UP_RAISE, 8, 23), strike: sprite(UP_STRIKE, 8, 23) },
+      right: { raise: sideRaise, strike: sideStrike },
+      left: { raise: mirrored(sideRaise), strike: mirrored(sideStrike) },
+    };
+
+    const hoeUp = sprite(HOE_UP);
+    const hoeDown = sprite(HOE_DOWN);
+    const canUp = sprite(CAN_UP);
+    const canPour = sprite(CAN_POUR);
+    this.toolArt = {
+      hoe: { raise: hoeUp, strike: hoeDown, raiseFlip: mirrored(hoeUp), strikeFlip: mirrored(hoeDown) },
+      can: { raise: canUp, strike: canPour, raiseFlip: mirrored(canUp), strikeFlip: mirrored(canPour) },
+    };
+
     this.anim = new Animator(CLIPS, 'idle');
+  }
+
+  /** Begin a swing. Ignored if one is already under way. */
+  useTool(tool: ToolKind): boolean {
+    if (this.swingTool !== null || this.frozen) return false;
+    this.swingTool = tool;
+    this.phase = 'raise';
+    this.phaseTime = 0;
+    this.vx = 0;
+    this.vy = 0;
+    return true;
+  }
+
+  private updateSwing(dt: number): void {
+    const tool = this.swingTool;
+    if (!tool) return;
+    const timing = TOOL_TIMING[tool];
+    this.phaseTime += dt;
+    switch (this.phase) {
+      case 'raise':
+        if (this.phaseTime >= timing.raise) {
+          this.phaseTime -= timing.raise;
+          this.phase = 'hold';
+        }
+        break;
+      case 'hold':
+        if (this.phaseTime >= timing.hold) {
+          this.phaseTime -= timing.hold;
+          this.phase = 'strike';
+          // The blow lands as the strike begins, not when it ends: the impact
+          // should precede the follow-through, or it reads as lag.
+          this.onToolImpact?.(tool);
+        }
+        break;
+      case 'strike':
+        if (timing.sustained) this.onToolSustain?.(tool, dt);
+        if (this.phaseTime >= timing.strike) {
+          this.phaseTime -= timing.strike;
+          this.phase = 'recover';
+        }
+        break;
+      case 'recover':
+        if (this.phaseTime >= timing.recover) {
+          this.onToolEnd?.(tool);
+          this.swingTool = null;
+        }
+        break;
+    }
+  }
+
+  /** How far into the current phase, 0-1. Drives the tool's interpolation. */
+  private phaseProgress(): number {
+    const tool = this.swingTool;
+    if (!tool) return 0;
+    const timing = TOOL_TIMING[tool];
+    const span = timing[this.phase];
+    return span <= 0 ? 1 : clamp(this.phaseTime / span, 0, 1);
   }
 
   get speed(): number {
@@ -99,9 +206,11 @@ export class Player {
   }
 
   update(dt: number, input: Input, blocked: (r: Rect) => boolean, time: number): void {
-    let ix = this.frozen ? 0 : input.axisX();
-    let iy = this.frozen ? 0 : input.axisY();
-    this.running = !this.frozen && input.isDown('run');
+    if (this.swingTool !== null) this.updateSwing(dt);
+    const locked = this.frozen || this.swingLocked;
+    let ix = locked ? 0 : input.axisX();
+    let iy = locked ? 0 : input.axisY();
+    this.running = !locked && input.isDown('run');
 
     // Normalise diagonals so corners are not a speed boost.
     if (ix !== 0 && iy !== 0) {
@@ -174,6 +283,10 @@ export class Player {
   }
 
   draw(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
+    if (this.swingTool !== null) {
+      this.drawSwing(ctx, camX, camY, this.swingTool);
+      return;
+    }
     const set = this.sprites[this.facing];
     const spr = set[this.anim.frame];
     const dx = Math.round(this.x - camX - spr.ox);
@@ -185,6 +298,64 @@ export class Player {
     if (this.breath) {
       ctx.drawImage(spr.canvas, 0, 0, spr.w, 11, dx, dy + 1, spr.w, 11);
     }
+  }
+
+  private drawSwing(ctx: CanvasRenderingContext2D, camX: number, camY: number, tool: ToolKind): void {
+    const pose = this.poses[this.facing];
+    const anchors: FacingAnchors = (tool === 'hoe' ? HOE_ANCHORS : CAN_ANCHORS)[this.facing];
+    const art = this.toolArt[tool];
+    const t = this.phaseProgress();
+
+    // Which body pose, and where between the two tool anchors we are.
+    let body: Sprite;
+    let blend: number;
+    switch (this.phase) {
+      case 'raise':
+        body = pose.raise;
+        // Ease out: the wind-up decelerates into the held pose.
+        blend = (1 - (1 - t) * (1 - t)) * -0.12;
+        break;
+      case 'hold':
+        body = pose.raise;
+        // Drifts a hair further back during the hold. Perfect stillness reads
+        // as a paused animation rather than as a held breath.
+        blend = -0.12 - t * 0.05;
+        break;
+      case 'strike':
+        body = pose.strike;
+        blend = 1;
+        break;
+      default:
+        body = pose.strike;
+        // Recovery drifts back toward the carry, but only a little: pull it
+        // too far and the tool visibly rises back up through the swing it just
+        // finished, which reads as the animation running backwards.
+        blend = 1 - t * 0.28;
+        break;
+    }
+
+    const useStrikeArt = this.phase === 'strike' || (this.phase === 'recover' && t < 0.45);
+    // Mirroring and draw order follow whichever anchor is active, not a single
+    // setting for the whole swing: the tool can pass behind the shoulder on the
+    // way up and land in front of the body on the way down.
+    const active = useStrikeArt ? anchors.strike : anchors.raise;
+    const flip = active.flip ?? false;
+    const behind = active.behind ?? false;
+    const toolSpr = useStrikeArt
+      ? (flip ? art.strikeFlip : art.strike)
+      : (flip ? art.raiseFlip : art.raise);
+
+    const ax = anchors.raise.x + (anchors.strike.x - anchors.raise.x) * clamp(blend, -0.3, 1);
+    const ay = anchors.raise.y + (anchors.strike.y - anchors.raise.y) * clamp(blend, -0.3, 1);
+
+    const bx = Math.round(this.x - camX - body.ox);
+    const by = Math.round(this.y - camY - body.oy);
+    const tx = Math.round(this.x - camX + ax);
+    const ty = Math.round(this.y - camY + ay);
+
+    if (behind) ctx.drawImage(toolSpr.canvas, tx, ty);
+    ctx.drawImage(body.canvas, bx, by);
+    if (!behind) ctx.drawImage(toolSpr.canvas, tx, ty);
   }
 
   /** Bounding box of the drawn sprite, for depth sorting and culling. */

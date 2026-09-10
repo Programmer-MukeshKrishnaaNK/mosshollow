@@ -20,14 +20,18 @@ import { Rain } from './render/rain.ts';
 import { Lighting, type Light } from './render/lighting.ts';
 import { Renderer, VIEW_H, VIEW_W } from './render/renderer.ts';
 import { GameAudio, type Ground } from './systems/audio.ts';
+import { Farm, type Plot } from './systems/farm.ts';
+import { Inventory } from './systems/inventory.ts';
 import { Music } from './systems/music.ts';
 import { FX, Particles } from './systems/particles.ts';
 import { TimeOfDay } from './systems/time.ts';
 import { Weather } from './systems/weather.ts';
 import { DebugOverlay } from './ui/debug.ts';
+import { Hotbar } from './ui/hotbar.ts';
 import { Hud, TitleCard } from './ui/hud.ts';
+import { drawTarget, type TargetKind } from './ui/target.ts';
 import { drawVignette } from './ui/panel.ts';
-import { Mat } from './world/materials.ts';
+import { Mat, TILE } from './world/materials.ts';
 import { World, type Drawable } from './world/world.ts';
 
 class Game {
@@ -48,6 +52,21 @@ class Game {
   private player: Player;
   private camera: Camera;
   private hud = new Hud();
+  private hotbar = new Hotbar();
+  private inventory = new Inventory();
+  private farm: Farm;
+  /** The tile the player is facing, and what acting on it would do. */
+  private targetTx = 0;
+  private targetTy = 0;
+  private targetKind: TargetKind = null;
+  private lastDay = 1;
+  /** Set while it is raining hard enough to count as watering overnight. */
+  private rainedToday = false;
+  /**
+   * Reusable drawable wrappers so the crops can join the world's depth sort
+   * without allocating a closure per plant per frame.
+   */
+  private cropDraws: CropDraw[] = [];
   private title = new TitleCard();
   private debug = new DebugOverlay();
   private loop: Loop;
@@ -60,10 +79,20 @@ class Game {
     this.clouds = new CloudShadows(this.renderer.ctx);
     this.world = new World(HOMESTEAD, this.renderer.ctx, VIEW_W + 1, VIEW_H + 1);
 
+    this.farm = new Farm(this.world.map);
+
     const spawn = this.world.spawn;
     this.player = new Player(spawn.x, spawn.y);
     this.player.onFootstep = (x, y) => this.onFootstep(x, y);
+    this.player.onToolImpact = (tool) => this.onToolImpact(tool);
+    this.player.onToolSustain = (tool, dt) => this.onToolSustain(tool, dt);
     this.player.frozen = true; // released when the title card clears
+
+    // What was left in the shed, and what somebody bothered to label.
+    this.inventory.add('hoe', 1);
+    this.inventory.add('can', 1);
+    this.inventory.add('seed_bellroot', 12);
+    this.inventory.add('seed_emberwheat', 12);
 
     this.camera = new Camera(VIEW_W + 1, VIEW_H + 1, this.world.map.pixelW, this.world.map.pixelH);
     this.camera.snapTo(this.player.x, this.player.focusY);
@@ -95,12 +124,21 @@ class Game {
         skipTitle: () => { this.title.dismissed = true; this.title.t = 99; this.title.update(0, true); },
         setSky: (sky: 'clear' | 'gathering' | 'rain' | 'clearing', hold = 600) => this.weather.setSky(sky, hold),
         weather: () => ({ wind: this.weather.wind, rain: this.weather.rain, overcast: this.weather.overcast, sky: this.weather.sky }),
+        farm: this.farm,
+        inventory: this.inventory,
+        target: () => ({ tx: this.targetTx, ty: this.targetTy, kind: this.targetKind }),
+        select: (i: number) => this.inventory.select(i),
+        nextDay: () => { this.clock.minutes = 0; this.clock.day++; this.lastDay = this.clock.day; this.farm.advanceDay(this.rainedToday); this.rainedToday = false; },
+        plots: () => [...this.farm.all].map((p) => ({ tx: p.tx, ty: p.ty, tilled: p.tilled, wet: p.wet, crop: p.crop, stage: p.stage, withered: p.withered })),
         /**
          * Advance the simulation by whole frames and redraw, without waiting
          * for requestAnimationFrame. Automated visual checks run headless or
          * in a hidden tab, where rAF never fires; this lets them drive the
          * game deterministically instead of sleeping and hoping.
          */
+        /** Stop the real frame loop so scripted checks are deterministic. */
+        pause: () => this.loop.stop(),
+        resume: () => this.loop.start(),
         step: (frames = 1) => {
           for (let i = 0; i < frames; i++) this.update(FIXED_DT);
           this.render();
@@ -134,6 +172,180 @@ class Game {
     this.audio.footstep(ground, this.player.running);
   }
 
+  /** Which tile the player is facing, and what pressing E there would do. */
+  private updateTarget(): void {
+    const p = this.player.interactPoint();
+    this.targetTx = Math.floor(p.x / TILE);
+    this.targetTy = Math.floor(p.y / TILE);
+    this.targetKind = this.actionAt(this.targetTx, this.targetTy);
+  }
+
+  private actionAt(tx: number, ty: number): TargetKind {
+    const plot = this.farm.get(tx, ty);
+    if (plot?.withered) return 'clear';
+    if (this.farm.isReady(tx, ty)) return 'harvest';
+    const held = this.inventory.selectedItem;
+    if (!held) return null;
+    if (held.tool === 'hoe') {
+      const blocked = this.world.blocked({ x: tx * TILE + 2, y: ty * TILE + 2, w: TILE - 4, h: TILE - 4 });
+      return this.farm.canTill(tx, ty, blocked) ? 'till' : null;
+    }
+    if (held.tool === 'can') return this.farm.canWater(tx, ty) ? 'water' : null;
+    if (held.plants) return this.farm.canPlant(tx, ty) ? 'plant' : null;
+    return null;
+  }
+
+  /** Press E. The held item and the tile decide what happens. */
+  private act(): void {
+    const kind = this.targetKind;
+    if (!kind) return;
+    const tx = this.targetTx;
+    const ty = this.targetTy;
+
+    switch (kind) {
+      case 'till':
+        this.player.useTool('hoe');
+        break;
+      case 'clear':
+        this.player.useTool('hoe');
+        break;
+      case 'water':
+        this.player.useTool('can');
+        break;
+      case 'plant': {
+        const held = this.inventory.selectedItem;
+        if (!held?.plants) return;
+        if (!this.farm.plant(tx, ty, held.plants)) return;
+        this.inventory.consumeSelected();
+        // Planting is a light action, so it resolves instantly — a swing
+        // animation here would make putting a seed in the ground feel like
+        // work, which is the opposite of what it should feel like.
+        this.particles.emit({
+          ...FX.footstepDust(tx * TILE + 8, ty * TILE + 12),
+          count: 5, ramp: ['soil0', 'soil1', 'soil2'], vz: [6, 14],
+        });
+        this.audio.blip(4, 0.045);
+        break;
+      }
+      case 'harvest': {
+        const result = this.farm.harvest(tx, ty, Math.random());
+        if (!result) return;
+        const left = this.inventory.add(result.item, result.count, this.time);
+        this.harvestBurst(tx, ty, result.crop.id);
+        this.audio.blip(12, 0.07);
+        this.audio.blip(19, 0.05);
+        this.camera.shake(0.5, 0.12, 14);
+        if (left > 0) {
+          // Nowhere to put it. Say so rather than silently eating the crop.
+          this.audio.blip(-8, 0.05);
+        }
+        break;
+      }
+    }
+  }
+
+  /** The moment a tool connects. */
+  private onToolImpact(tool: 'hoe' | 'can'): void {
+    const tx = this.targetTx;
+    const ty = this.targetTy;
+    const cx = tx * TILE + TILE / 2;
+    const cy = ty * TILE + TILE - 2;
+
+    if (tool === 'hoe') {
+      const cleared = this.farm.clear(tx, ty);
+      const tilled = cleared ? false : this.farm.till(tx, ty);
+      if (tilled || cleared) {
+        this.particles.emit(FX.impactChips(cx, cy, ['soil0', 'soil1', 'soil2']));
+        this.particles.emit({ ...FX.footstepDust(cx, cy), count: 6, spread: 5, ramp: ['dirt1', 'dirt2', 'dirt3'] });
+        this.camera.shake(1.15, 0.16, 16);
+        this.audio.footstep('soil', true);
+        this.audio.blip(-14, 0.05);
+      } else {
+        // A miss still lands — it just does not achieve anything.
+        this.particles.emit({ ...FX.footstepDust(cx, cy), count: 3 });
+        this.camera.shake(0.55, 0.1, 20);
+        this.audio.footstep('stone', false);
+      }
+    }
+  }
+
+  /** Every frame the can is pouring. */
+  private onToolSustain(tool: 'hoe' | 'can', dt: number): void {
+    if (tool !== 'can') return;
+    const tx = this.targetTx;
+    const ty = this.targetTy;
+    const p = this.player;
+    // The stream leaves the spout, not the player's feet.
+    const sx = p.x + (p.facing === 'left' ? -11 : p.facing === 'right' ? 11 : 0);
+    const sy = p.y - 20;
+    const dx = tx * TILE + TILE / 2 - sx;
+    const dy = ty * TILE + TILE / 2 - sy;
+    this.particles.emit({
+      x: sx, y: sy, z: 0, count: 2, spread: 1.5,
+      vx: [dx * 1.6, dx * 2.2], vy: [dy * 1.6, dy * 2.2], vz: [2, 6],
+      life: [0.28, 0.42], size: [1, 1], gravity: 40, drag: 0.6,
+      ramp: ['water0', 'water1', 'water2'],
+    });
+    if (this.farm.water(tx, ty)) {
+      this.particles.emit({ ...FX.splash(tx * TILE + 8, ty * TILE + 10), count: 5, vz: [8, 18] });
+      this.audio.blip(-2, 0.03);
+    }
+    void dt;
+  }
+
+  private harvestBurst(tx: number, ty: number, cropId: string): void {
+    const cx = tx * TILE + TILE / 2;
+    const cy = ty * TILE + 8;
+    const ramp = cropId === 'emberwheat'
+      ? (['gold', 'orange', 'dirt1'] as const)
+      : (['cream0', 'fol1', 'fol3'] as const);
+    this.particles.emit({
+      x: cx, y: cy, z: 8, count: 11, spread: 5,
+      vx: [-22, 22], vy: [-10, 10], vz: [16, 36],
+      life: [0.4, 0.75], size: [1, 2], gravity: 90, drag: 1.1,
+      ramp: [...ramp],
+    });
+    // A couple of leaves torn loose, settling rather than vanishing.
+    this.particles.emit({ ...FX.leafFall(cx, cy, 12), count: 3 });
+  }
+
+  private handleHotbar(): void {
+    const keys = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6'] as const;
+    for (let i = 0; i < keys.length; i++) {
+      if (this.input.wasPressed(keys[i])) {
+        this.inventory.select(i);
+        this.audio.blip(7, 0.035);
+      }
+    }
+  }
+
+  /** Player plus every visible plant, for the world's depth-sorted pass. */
+  private buildDrawables(): Drawable[] {
+    const list: Drawable[] = [this.playerDrawable];
+    let i = 0;
+    for (const plot of this.farm.all) {
+      if (!plot.crop) continue;
+      let d = this.cropDraws[i];
+      if (!d) {
+        d = new CropDraw(this.farm, this);
+        this.cropDraws[i] = d;
+      }
+      d.bind(plot);
+      list.push(d);
+      i++;
+    }
+    return list;
+  }
+
+  /** Read by CropDraw; kept together so the wrapper stays a thin adapter. */
+  get renderTime(): number {
+    return this.time;
+  }
+
+  get renderWind(): number {
+    return this.weather.wind;
+  }
+
   private update(dt: number): void {
     this.time += dt;
 
@@ -161,10 +373,31 @@ class Game {
     this.title.update(dt, this.input.anyInputYet);
     if (this.title.done && this.player.frozen) this.player.frozen = false;
     this.hud.alpha = clamp(this.hud.alpha + (this.title.dismissed ? dt * 1.4 : -dt * 2), 0, 1);
+    this.hotbar.alpha = this.hud.alpha;
 
     this.clock.update(dt);
     this.weather.update(dt);
+
+    // A new day: crops that were watered advance, the rest get thirstier.
+    if (this.clock.day !== this.lastDay) {
+      this.lastDay = this.clock.day;
+      this.farm.advanceDay(this.rainedToday);
+      this.rainedToday = false;
+    }
+    // Rain waters everything while it falls, and counts for the night.
+    if (this.weather.rain > 0.35) {
+      this.farm.soak();
+      this.rainedToday = true;
+    }
+    this.farm.update(dt);
+
     this.player.update(dt, this.input, this.world.blocked, this.time);
+    this.updateTarget();
+    this.handleHotbar();
+    if (this.input.wasPressed('interact') && !this.player.swinging && !this.player.frozen) {
+      this.act();
+    }
+    this.hotbar.update(dt, this.inventory);
     this.world.update(
       dt, this.time, this.weather, this.clock, this.particles,
       this.camera.originX, this.camera.originY, VIEW_W, VIEW_H,
@@ -202,13 +435,17 @@ class Game {
 
     renderer.clearWorld();
     world.drawGround(ctx, camX, camY, VIEW_W + 1, VIEW_H + 1, clock);
+    // Worked soil sits on the ground, above the terrain and below everything
+    // that stands on it.
+    this.farm.drawSoil(ctx, camX, camY, VIEW_W + 1, VIEW_H + 1);
+    drawTarget(ctx, this.targetTx, this.targetTy, camX, camY, this.targetKind, this.time);
     // Ripples belong on the water surface; splashes belong on the ground, under
     // anything standing on it.
     this.rain.drawWaterRings(ctx, this.time, this.weather.rain, camX, camY, world.isWater);
     this.rain.drawSplashes(ctx, camX, camY);
     world.drawSorted(
       ctx, camX, camY, VIEW_W + 1, VIEW_H + 1,
-      [this.playerDrawable], this.particles, clock, this.weather,
+      this.buildDrawables(), this.particles, clock, this.weather,
     );
 
     // Lighting last, over the finished picture.
@@ -240,10 +477,33 @@ class Game {
     const uctx = renderer.uctx;
     drawVignette(uctx, VIEW_W, VIEW_H, 0.18 + clock.darkness * 0.12);
     this.hud.draw(uctx, clock);
+    this.hotbar.draw(uctx, this.inventory, VIEW_W, VIEW_H, this.time);
     this.title.draw(uctx, VIEW_W, VIEW_H);
     this.debug.drawUi(uctx, this.loop, this.player, world, clock, this.weather, this.particles);
 
     renderer.present(camera.fracX, camera.fracY);
+  }
+}
+
+/**
+ * Adapter that lets a farm plot take part in the world's depth sort. Bound to a
+ * different plot each frame rather than recreated, so a hundred plants cost no
+ * allocations.
+ */
+class CropDraw implements Drawable {
+  sortY = 0;
+  private plot: Plot | null = null;
+
+  constructor(private farm: Farm, private game: Game) {}
+
+  bind(plot: Plot): void {
+    this.plot = plot;
+    this.sortY = Farm.sortY(plot);
+  }
+
+  draw(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
+    if (!this.plot) return;
+    this.farm.drawCrop(ctx, this.plot, camX, camY, this.game.renderTime, this.game.renderWind);
   }
 }
 

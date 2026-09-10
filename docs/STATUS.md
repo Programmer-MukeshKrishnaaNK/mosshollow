@@ -4,7 +4,8 @@ Updated: 2026-09-10
 
 ## Current build
 
-Phases 1 and 2 complete — the visual foundation, and the atmosphere over it.
+Phases 1 to 3 complete — the visual foundation, the atmosphere over it, and
+a farming loop you can run start to finish.
 
 **Working and verified in-browser:**
 
@@ -28,17 +29,32 @@ Phases 1 and 2 complete — the visual foundation, and the atmosphere over it.
 - Audio: fully synthesised — wind, rain, drips, shore, birds, crickets, and
   footsteps keyed to grass / earth / soil / stone / wood
 - Music: generated pentatonic score, sparse by day, sparser and lower at night
+- Farming: till, plant, water, grow, wither, harvest, regrow, and ground that
+  reverts if you turn it and then never use it
+- Crops: two, five authored growth stages each, wind-responsive, depth-sorted
+  with everything else so you can stand behind mature wheat
+- Soil: generated dry and wet variants with per-side edges, so a block of beds
+  reads as one worked patch instead of a grid of squares
+- Tool swing: anticipation, held apex, impact hold, follow-through; tool sprite
+  anchored per facing and per phase, mirrored so it swings one-handed
+- Inventory and hotbar with six slots, stacking, and item flavour lines
 - HUD: almanac card with day, clock and sun/moon dial; title card
-- Debug overlay, art sheet page, deterministic dev stepper
+- Debug overlay, art sheet (5 pages incl. an animation filmstrip), deterministic
+  dev stepper with pause/resume
 
-**Measured:** 3.5 ms/frame typical, 6.5 ms worst case (dense forest) against a
-16.7 ms budget. Audio peaks at 0.30 with no clipping. Swept all four sky states
-against eight times of day with no runtime errors. Production bundle 19.5 kB
-gzipped, zero runtime dependencies.
+**Measured:** 3.5 ms/frame typical, 6.5 ms worst case (dense forest), and
+5.3 ms with 117 plots of mature crops on screen — against a 16.7 ms budget.
+Audio peaks at 0.30 with no clipping. Swept all four sky states against eight
+times of day with no runtime errors. Farm loop verified end to end: till,
+plant (seed consumed), water, seven watered days through all five growth
+stages, harvest into inventory; plus withering after the thirst limit, clearing
+a withered plant, emberwheat regrowing exactly twice, and rain both soaking the
+field and counting as an overnight watering. Production bundle 25.9 kB gzipped,
+zero runtime dependencies.
 
 ## Current milestone
 
-Phase 3 — the farm. Soil, planting, watering, growth, harvest, inventory.
+Phase 4 — exploration. Resource gathering, and somewhere to go.
 
 ## Known issues
 
@@ -47,6 +63,11 @@ Phase 3 — the farm. Soil, planting, watering, growth, harvest, inventory.
   music, ambience and footsteps needs a human ear before it can be called done.
 - Rain does not leave puddles, and the ground dries instantly when it stops.
   The wetness is a lighting change, not a state the terrain remembers.
+- **Nothing is saved.** Close the tab and the valley forgets you.
+- Planting resolves instantly with no animation. It feels right for a light
+  action, but it is the one interaction in the loop with no motion behind it.
+- The fallow field terrain and tilled soil are close enough in tone that a big
+  untilled patch can read as worked ground from a distance.
 - Path corners at the T-junction still read a little square; the field roughen
   does not fully break a right angle.
 - The fallow field does not yet read clearly as *a field* from a distance.
@@ -56,10 +77,13 @@ Phase 3 — the farm. Soil, planting, watering, growth, harvest, inventory.
 
 ## Next task
 
-The farming loop, in this order: hoe tilled soil into the fallow field →
-watering with a visible wet-soil state → crop growth stages driven by the day
-counter → harvest with a proper anticipation/impact/recovery tool animation →
-a minimal inventory to put the crop in.
+Save and load, before the state gets any bigger. The farm is already a sparse
+map keyed by tile, which is the shape a save file wants; player position,
+inventory, clock, weather and farm plots all need to round-trip, and the
+loader has to tolerate fields that did not exist when the save was written.
+
+After that, Phase 4: an axe and a pick, trees and rocks that give wood and
+stone, and a second area to spend them getting into.
 
 ## Deferred, on purpose
 
@@ -92,3 +116,11 @@ not belong in this game); procedural cave levels (scope).
 - **Pentatonic, and mostly silence.** A generated score cannot play a wrong
   note in a pentatonic scale, so the only risk left is playing too many of
   them. Most beats are deliberately empty.
+- **The impact hold is 100ms, not 60.** At 60ms — under four frames — the eye
+  skips the moment the blow lands and the swing reads as a sprite swap. This
+  was measured by driving a real swing through the filmstrip page, not guessed.
+- **Crop stages build on each other's silhouette.** Five unrelated sprites read
+  as the plant being replaced; five that share a stem and add growth above read
+  as the plant growing.
+- **Growth advances on watered days, not elapsed time.** It is the only thing
+  that makes the watering can a decision instead of a chore.

@@ -26,7 +26,8 @@ Then open the URL Vite prints. `npm run build` produces `dist/`.
 |---|---|
 | `W` `A` `S` `D` / arrows | walk |
 | `Shift` | run |
-| `E` / `Space` | interact |
+| `E` / `Space` | use what you're holding |
+| `1` – `6` | choose a hotbar slot |
 | `` ` `` | debug overlay (press again for collision boxes, again to hide) |
 | `T` | step the clock on an hour *(development)* |
 
@@ -65,6 +66,14 @@ Then open the URL Vite prints. `npm run build` produces `dist/`.
   whether you're on grass, earth, stone or a wooden dock.
 - **A generated score.** Sparse pentatonic plucks over a four-chord pad that
   drifts, thinning out and dropping an octave after dark. Not a loop.
+- **A farm you work.** Turn ground with the hoe, plant, water, and come back
+  the next day. Two crops with five hand-drawn growth stages each, so progress
+  is something you see rather than a number. Crops only advance on days they
+  were watered, wither if they are left too long, and rain waters the whole
+  field for you. Emberwheat regrows twice from the crown before it gives up.
+- **A swing worth swinging.** The hoe winds up, *holds* — that pause is the
+  anticipation the whole thing rests on — snaps through, throws soil, shakes
+  the camera a pixel, and follows through into a recovery you can walk out of.
 
 ## How it fits together
 
@@ -76,7 +85,7 @@ src/
               rain, shadows
   world/      tilemap, prop registry, area assembly, collision, depth sort
   entities/   player, animator
-  systems/    time of day, weather, particles, audio, music
+  systems/    time of day, weather, particles, audio, music, farm, inventory
   ui/         bitmap font, panels, HUD, debug overlay
   data/       area content (ASCII maps and prop placements)
 ```
@@ -95,12 +104,16 @@ one shared shading model in `src/art/organic.ts` rather than authored, so every
 leafy thing in the valley is lit by the same vector and quantised to the same
 ramp while no two share a silhouette.
 
-There is an art inspection page at `/art.html?p=1` (pages 1–3) that draws every
-sprite at whole-number zoom against light and dark ground. It is a development
-tool and is not part of the game.
+There is an art inspection page at `/art.html?p=1` (pages 1–5) that draws every
+sprite at whole-number zoom against light and dark ground. Page 5 is a
+filmstrip: it drives a real `Player` through a real tool swing and draws it
+every few frames, because animation cannot be judged from static poses — what
+matters is the spacing between them. It is a development tool and is not part
+of the game.
 
 ## Status
 
-Early. The first vertical slice — one area that feels good to walk around, in
-any weather, at any hour — is in. Farming, crafting, NPCs, dialogue, quests and
-saving are not built yet; see the roadmap in `docs/STATUS.md`.
+Early, but playable. One area that feels good to walk around in any weather at
+any hour, and a farming loop you can actually run from bare ground to a full
+inventory. Crafting, NPCs, dialogue, quests and saving are not built yet; see
+the roadmap in `docs/STATUS.md`.

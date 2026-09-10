@@ -18,7 +18,8 @@ export type Action =
   | 'slot2'
   | 'slot3'
   | 'slot4'
-  | 'slot5';
+  | 'slot5'
+  | 'slot6';
 
 const BINDINGS: Record<string, Action> = {
   KeyW: 'up',
@@ -42,6 +43,7 @@ const BINDINGS: Record<string, Action> = {
   Digit3: 'slot3',
   Digit4: 'slot4',
   Digit5: 'slot5',
+  Digit6: 'slot6',
 };
 
 /** Keys the browser would otherwise scroll or scrub the page with. */

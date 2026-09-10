@@ -16,6 +16,10 @@ import { buildFarmhouse } from './art/building.ts';
 import * as P from './art/player.art.ts';
 import { buildProps, type PropDef } from './world/props.ts';
 import { drawText } from './ui/font.ts';
+import { buildSoilTiles } from './art/soil.ts';
+import { Player } from './entities/player.ts';
+import { Input } from './core/input.ts';
+import { BELLROOT, EMBERWHEAT } from './art/crops.art.ts';
 
 const W = 1280;
 const H = 720;
@@ -147,5 +151,68 @@ if (page === 3) {
   }
 }
 
+if (page === 4) {
+  label('CROPS — 5x, dry soil then wet', 8, 8);
+  const soil = buildSoilTiles();
+  const stages = [BELLROOT, EMBERWHEAT];
+  const names = ['bellroot', 'emberwheat'];
+  stages.forEach((crop, row) => {
+    crop.forEach((map, i) => {
+      const spr = sprite(map, 8, map.length);
+      const x = 8 + i * 130;
+      const y = 24 + row * 230;
+      // Draw it standing in its furrow, which is the only way to judge it.
+      const bed = makeCanvas(16, 24);
+      const bc = ctxOf(bed);
+      bc.drawImage(soil[row === 0 ? 'dry' : 'wet'][i % 4], 0, 8);
+      bc.drawImage(spr.canvas, 0, 24 - spr.h - 6);
+      tile({ canvas: bed, w: 16, h: 24, ox: 8, oy: 24 }, x, y, 5, `${names[row]} ${i}`, GRASS);
+    });
+  });
+  label('SOIL — 8x, four dry variants then four wet', 8, 470);
+  soil.dry.forEach((c, i) => tile({ canvas: c, w: 16, h: 16, ox: 0, oy: 0 }, 8 + i * 140, 486, 8, `dry ${i}`, GRASS));
+  soil.wet.forEach((c, i) => tile({ canvas: c, w: 16, h: 16, ox: 0, oy: 0 }, 600 + i * 140, 486, 8, `wet ${i}`, GRASS));
+}
+
+if (page === 5) {
+  // A real filmstrip: an actual Player is driven through a real swing and
+  // drawn every few frames. Judging animation from static poses is guesswork —
+  // what matters is the spacing between them.
+  const strip = (tool: 'hoe' | 'can', facing: 'down' | 'right' | 'up', y: number): void => {
+    label(`${tool} — facing ${facing}`, 8, y - 12);
+    const p = new Player(24, 40);
+    p.facing = facing;
+    p.useTool(tool);
+    const input = new Input(new EventTarget());
+    const noBlock = (): boolean => false;
+    let t = 0;
+    const shots = 11;
+    // Sample evenly across the whole swing so the strip shows its real timing.
+    const total = tool === 'hoe' ? 0.53 : 0.76;
+    const stepDt = total / (shots - 1);
+    for (let i = 0; i < shots; i++) {
+      const cell = makeCanvas(40, 48);
+      const cc = ctxOf(cell);
+      cc.fillStyle = GRASS;
+      cc.fillRect(0, 0, 40, 48);
+      // The player draws in world space; offset the camera to centre it.
+      p.draw(cc, 24 - 20, 40 - 40);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(cell, 0, 0, 40, 48, 8 + i * 114, y, 40 * 2.8, 48 * 2.8);
+      ctx.strokeStyle = '#000';
+      ctx.strokeRect(8 + i * 114 + 0.5, y + 0.5, 40 * 2.8 - 1, 48 * 2.8 - 1);
+      label(`${(t * 1000).toFixed(0)}ms`, 8 + i * 114, y + 48 * 2.8 + 4, '#7d8593');
+      // advance
+      const sub = 4;
+      for (let k = 0; k < sub; k++) p.update(stepDt / sub, input, noBlock, t + (k * stepDt) / sub);
+      t += stepDt;
+    }
+  };
+  strip('hoe', 'down', 24);
+  strip('hoe', 'right', 214);
+  strip('can', 'down', 404);
+  strip('hoe', 'up', 594);
+}
+
 // Page links, so the next screenshot can just navigate.
-label(`page ${page} of 3   —   /art.html?p=1|2|3`, 8, H - 12, '#4a833f');
+label(`page ${page} of 5   —   /art.html?p=1..5`, 8, H - 12, '#4a833f');
