@@ -22,13 +22,14 @@ import { Renderer, VIEW_H, VIEW_W } from './render/renderer.ts';
 import { GameAudio, type Ground } from './systems/audio.ts';
 import { Farm, type Plot } from './systems/farm.ts';
 import { Inventory } from './systems/inventory.ts';
+import * as Save from './systems/save.ts';
 import { Music } from './systems/music.ts';
 import { FX, Particles } from './systems/particles.ts';
 import { TimeOfDay } from './systems/time.ts';
 import { Weather } from './systems/weather.ts';
 import { DebugOverlay } from './ui/debug.ts';
 import { Hotbar } from './ui/hotbar.ts';
-import { Hud, TitleCard } from './ui/hud.ts';
+import { Hud, TitleCard, Toast } from './ui/hud.ts';
 import { drawTarget, type TargetKind } from './ui/target.ts';
 import { drawVignette } from './ui/panel.ts';
 import { Mat, TILE } from './world/materials.ts';
@@ -53,6 +54,7 @@ class Game {
   private camera: Camera;
   private hud = new Hud();
   private hotbar = new Hotbar();
+  private toast = new Toast();
   private inventory = new Inventory();
   private farm: Farm;
   /** The tile the player is facing, and what acting on it would do. */
@@ -94,8 +96,23 @@ class Game {
     this.inventory.add('seed_bellroot', 12);
     this.inventory.add('seed_emberwheat', 12);
 
+    // The camera has to exist before the save is applied: restoring a game
+    // moves the player, and the camera has to be told where they went.
     this.camera = new Camera(VIEW_W + 1, VIEW_H + 1, this.world.map.pixelW, this.world.map.pixelH);
+
+    // ?fresh starts a new valley without touching the existing save, which is
+    // what automated checks and a stuck player both need.
+    const fresh = new URLSearchParams(location.search).has('fresh');
+    if (!fresh) this.loadGame();
+    this.lastDay = this.clock.day;
     this.camera.snapTo(this.player.x, this.player.focusY);
+
+    // Save when the tab goes away. 'pagehide' is the one event that reliably
+    // fires on mobile and on tab close; 'beforeunload' does not.
+    window.addEventListener('pagehide', () => this.saveGame(false));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.saveGame(false);
+    });
 
     this.playerDrawable = {
       sortY: this.player.y,
@@ -128,6 +145,10 @@ class Game {
         inventory: this.inventory,
         target: () => ({ tx: this.targetTx, ty: this.targetTy, kind: this.targetKind }),
         select: (i: number) => this.inventory.select(i),
+        save: () => this.saveGame(true),
+        load: () => this.loadGame(),
+        wipeSave: () => Save.clear(),
+        readSave: () => Save.read(),
         nextDay: () => { this.clock.minutes = 0; this.clock.day++; this.lastDay = this.clock.day; this.farm.advanceDay(this.rainedToday); this.rainedToday = false; },
         plots: () => [...this.farm.all].map((p) => ({ tx: p.tx, ty: p.ty, tilled: p.tilled, wet: p.wet, crop: p.crop, stage: p.stage, withered: p.withered })),
         /**
@@ -170,6 +191,41 @@ class Game {
       this.particles.emit({ ...FX.splash(x, y - 1), count: 3, vz: [8, 16] });
     }
     this.audio.footstep(ground, this.player.running);
+  }
+
+  /** Write the whole world state. `announce` shows the toast. */
+  private saveGame(announce = true): void {
+    const ok = Save.write({
+      version: Save.SAVE_VERSION,
+      savedAt: Date.now(),
+      area: this.world.data.id,
+      player: { x: this.player.x, y: this.player.y, facing: this.player.facing },
+      clock: { minutes: this.clock.minutes, day: this.clock.day },
+      weather: { sky: this.weather.sky, rain: this.weather.rain, overcast: this.weather.overcast },
+      inventory: { slots: this.inventory.slots, selected: this.inventory.selected },
+      farm: Save.serializePlots(this.farm.all),
+    });
+    if (announce) this.toast.show(ok ? 'saved' : 'could not save');
+  }
+
+  /** Restore a save if there is one. Never throws on a bad file. */
+  private loadGame(): boolean {
+    const data = Save.read();
+    if (!data || data.area !== this.world.data.id) return false;
+    this.player.x = data.player.x;
+    this.player.y = data.player.y;
+    this.player.facing = data.player.facing;
+    this.clock.minutes = data.clock.minutes;
+    this.clock.day = data.clock.day;
+    this.weather.restore(data.weather.sky, data.weather.rain, data.weather.overcast);
+    // A save from before the inventory had a given item leaves that slot empty
+    // rather than shifting everything along.
+    if (data.inventory.slots.length) {
+      this.inventory.restore(data.inventory.slots, data.inventory.selected);
+    }
+    this.farm.restore(data.farm);
+    this.camera.snapTo(this.player.x, this.player.focusY);
+    return true;
   }
 
   /** Which tile the player is facing, and what pressing E there would do. */
@@ -383,6 +439,10 @@ class Game {
       this.lastDay = this.clock.day;
       this.farm.advanceDay(this.rainedToday);
       this.rainedToday = false;
+      // A day is the natural unit of progress here, so it is also the natural
+      // autosave point — you can never lose more than one day's work.
+      this.saveGame(false);
+      this.toast.show(`Day ${this.clock.day}`);
     }
     // Rain waters everything while it falls, and counts for the night.
     if (this.weather.rain > 0.35) {
@@ -398,6 +458,7 @@ class Game {
       this.act();
     }
     this.hotbar.update(dt, this.inventory);
+    this.toast.update(dt);
     this.world.update(
       dt, this.time, this.weather, this.clock, this.particles,
       this.camera.originX, this.camera.originY, VIEW_W, VIEW_H,
@@ -478,6 +539,7 @@ class Game {
     drawVignette(uctx, VIEW_W, VIEW_H, 0.18 + clock.darkness * 0.12);
     this.hud.draw(uctx, clock);
     this.hotbar.draw(uctx, this.inventory, VIEW_W, VIEW_H, this.time);
+    this.toast.draw(uctx, VIEW_W, VIEW_H);
     this.title.draw(uctx, VIEW_W, VIEW_H);
     this.debug.drawUi(uctx, this.loop, this.player, world, clock, this.weather, this.particles);
 

@@ -4,8 +4,9 @@ Updated: 2026-09-10
 
 ## Current build
 
-Phases 1 to 3 complete — the visual foundation, the atmosphere over it, and
-a farming loop you can run start to finish.
+Phases 1 to 3 complete, plus persistence — the visual foundation, the
+atmosphere over it, a farming loop you can run start to finish, and a save that
+survives being handed a file it was not expecting.
 
 **Working and verified in-browser:**
 
@@ -39,6 +40,10 @@ a farming loop you can run start to finish.
   anchored per facing and per phase, mirrored so it swings one-handed
 - Inventory and hotbar with six slots, stacking, and item flavour lines
 - HUD: almanac card with day, clock and sun/moon dial; title card
+- Save/load: autosaves each morning and on tab hide, restores player, clock,
+  weather, inventory and every worked plot. Every field is optional on the way
+  in and content ids are validated against the data, so an old, a newer or a
+  corrupted file degrades rather than crashes
 - Debug overlay, art sheet (5 pages incl. an animation filmstrip), deterministic
   dev stepper with pause/resume
 
@@ -49,8 +54,11 @@ times of day with no runtime errors. Farm loop verified end to end: till,
 plant (seed consumed), water, seven watered days through all five growth
 stages, harvest into inventory; plus withering after the thirst limit, clearing
 a withered plant, emberwheat regrowing exactly twice, and rain both soaking the
-field and counting as an overnight watering. Production bundle 25.9 kB gzipped,
-zero runtime dependencies.
+field and counting as an overnight watering. Save round-trips exactly, and ten
+hostile files — corrupt JSON, empty, an array, a future version, every field
+missing, nulls throughout, wrong types, unknown crops and items, out-of-bounds
+plots, absurd numbers — all load without a single throw. Production bundle
+25.9 kB gzipped, zero runtime dependencies.
 
 ## Current milestone
 
@@ -63,7 +71,6 @@ Phase 4 — exploration. Resource gathering, and somewhere to go.
   music, ambience and footsteps needs a human ear before it can be called done.
 - Rain does not leave puddles, and the ground dries instantly when it stops.
   The wetness is a lighting change, not a state the terrain remembers.
-- **Nothing is saved.** Close the tab and the valley forgets you.
 - Planting resolves instantly with no animation. It feels right for a light
   action, but it is the one interaction in the loop with no motion behind it.
 - The fallow field terrain and tilled soil are close enough in tone that a big
@@ -77,13 +84,14 @@ Phase 4 — exploration. Resource gathering, and somewhere to go.
 
 ## Next task
 
-Save and load, before the state gets any bigger. The farm is already a sparse
-map keyed by tile, which is the shape a save file wants; player position,
-inventory, clock, weather and farm plots all need to round-trip, and the
-loader has to tolerate fields that did not exist when the save was written.
+Phase 4 — exploration: an axe and a pick, trees and rocks that give wood and
+stone, and a second area worth spending them to get into. The tool swing,
+particles and inventory are all in place, so a new tool is a definition plus a
+sprite rather than a system.
 
-After that, Phase 4: an axe and a pick, trees and rocks that give wood and
-stone, and a second area to spend them getting into.
+Before that lands, `?fresh` needs a real counterpart in the UI — right now
+starting over means knowing about a URL parameter, and the first autosave then
+overwrites the old file.
 
 ## Deferred, on purpose
 
@@ -124,3 +132,10 @@ not belong in this game); procedural cave levels (scope).
   as the plant growing.
 - **Growth advances on watered days, not elapsed time.** It is the only thing
   that makes the watering can a decision instead of a chore.
+- **The save loader trusts nothing.** Every field is read through a helper that
+  takes a default, and every content id is checked against the data. Losing one
+  plant to a removed crop is a bug report; losing the farm is a ruined
+  afternoon.
+- **A version newer than this build is refused outright.** Reading it would
+  silently discard whatever it knows that this build does not, and then write
+  the loss back on the next autosave.

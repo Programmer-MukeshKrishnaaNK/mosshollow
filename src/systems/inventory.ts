@@ -90,6 +90,17 @@ export class Inventory {
     return count - left;
   }
 
+  /** Replace all slots, e.g. from a save file. Tolerates a short list. */
+  restore(slots: readonly Slot[], selected: number): void {
+    for (let i = 0; i < this.slots.length; i++) {
+      const s = slots[i];
+      this.slots[i].id = s?.id ?? null;
+      this.slots[i].count = s?.id ? s.count : 0;
+    }
+    this.selected = clamp(selected, 0, HOTBAR_SIZE - 1);
+    this.lastChanged = -1;
+  }
+
   /** Consume one of the selected stack. Used when planting a seed. */
   consumeSelected(): boolean {
     const s = this.slots[this.selected];

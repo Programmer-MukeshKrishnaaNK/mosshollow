@@ -75,6 +75,43 @@ function circle(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number
 }
 
 /**
+ * A brief line at the bottom of the screen: saved, inventory full, that kind of
+ * thing. Deliberately small and short-lived — it should be noticed and then
+ * forgotten, never dismissed.
+ */
+export class Toast {
+  private text = '';
+  private life = 0;
+  private maxLife = 2.4;
+
+  show(text: string, seconds = 2.4): void {
+    this.text = text;
+    this.life = seconds;
+    this.maxLife = seconds;
+  }
+
+  update(dt: number): void {
+    if (this.life > 0) this.life -= dt;
+  }
+
+  draw(ctx: CanvasRenderingContext2D, viewW: number, viewH: number): void {
+    if (this.life <= 0) return;
+    const t = this.life / this.maxLife;
+    // Rises a little as it goes, which reads as it leaving rather than
+    // vanishing.
+    const rise = (1 - t) * 3;
+    const alpha = Math.min(1, t * 3.2);
+    const w = textWidth(this.text);
+    const x = Math.round((viewW - w) / 2);
+    const y = Math.round(viewH - 52 - rise);
+    const prev = ctx.globalAlpha;
+    ctx.globalAlpha = prev * alpha;
+    drawTextShadowed(ctx, this.text, x, y, PALETTE.cream0, PALETTE.ink);
+    ctx.globalAlpha = prev;
+  }
+}
+
+/**
  * The opening title. Fades up over the world, holds, then clears on any key —
  * the player is looking at the actual game the whole time, which is a better
  * first impression than a separate menu screen.

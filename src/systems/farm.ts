@@ -20,6 +20,7 @@ import { sprite, type Sprite } from '../art/pixel.ts';
 import { CROPS, type CropDef } from '../data/crops.ts';
 import { Mat, TILE } from '../world/materials.ts';
 import type { Tilemap } from '../world/tilemap.ts';
+import type { PlotSave } from './save.ts';
 
 export interface Plot {
   tx: number;
@@ -218,6 +219,19 @@ export class Farm {
     for (const p of this.plots.values()) {
       p.wet = true;
       p.thirst = 0;
+    }
+  }
+
+  /** Replace all plot state, e.g. from a save file. */
+  restore(saved: readonly PlotSave[]): void {
+    this.plots.clear();
+    for (const s of saved) {
+      if (!this.map.inBounds(s.tx, s.ty)) continue;
+      this.plots.set(this.key(s.tx, s.ty), {
+        tx: s.tx, ty: s.ty, tilled: s.tilled, wet: s.wet, crop: s.crop,
+        stage: s.stage, progress: s.progress, thirst: s.thirst,
+        withered: s.withered, regrowLeft: s.regrowLeft, pop: 0,
+      });
     }
   }
 

@@ -116,6 +116,15 @@ export class Weather {
     return this.wind * 11;
   }
 
+  /** Restore a saved sky. The state machine picks up from there. */
+  restore(sky: Sky, rain: number, overcast: number): void {
+    this.sky = sky;
+    this.rain = rain;
+    this.overcast = overcast;
+    this.applyState();
+    this.stateTimer = 30 + this.rng() * 60;
+  }
+
   /** True when the sky is dry enough for pollen, butterflies and birdsong. */
   get fair(): boolean {
     return this.rain < 0.12 && this.overcast < 0.5;

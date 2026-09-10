@@ -20,6 +20,9 @@ npm run dev
 
 Then open the URL Vite prints. `npm run build` produces `dist/`.
 
+Add `?fresh` to the URL to start a new valley without loading the existing
+save.
+
 ## Controls
 
 | | |
@@ -74,6 +77,11 @@ Then open the URL Vite prints. `npm run build` produces `dist/`.
 - **A swing worth swinging.** The hoe winds up, *holds* — that pause is the
   anticipation the whole thing rests on — snaps through, throws soil, shakes
   the camera a pixel, and follows through into a recovery you can walk out of.
+- **It remembers.** The valley saves itself every morning and whenever you
+  close the tab, and picks up where you left off. The loader treats every field
+  in the file as optional and validates content ids against the game's data, so
+  a save from an older build, a newer build, or a corrupted one degrades
+  instead of crashing.
 
 ## How it fits together
 
@@ -85,7 +93,8 @@ src/
               rain, shadows
   world/      tilemap, prop registry, area assembly, collision, depth sort
   entities/   player, animator
-  systems/    time of day, weather, particles, audio, music, farm, inventory
+  systems/    time of day, weather, particles, audio, music, farm, inventory,
+              save/load
   ui/         bitmap font, panels, HUD, debug overlay
   data/       area content (ASCII maps and prop placements)
 ```
