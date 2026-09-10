@@ -94,9 +94,9 @@ export const HOMESTEAD: AreaData = {
   ],
   props: [
     // --- the yard ---------------------------------------------------------
-    { def: 'lantern', tx: 11.4, ty: 15.6 },
+    { def: 'lantern', tx: 11.4, ty: 15.6, inspect: 'lantern_yard' },
     { def: 'lantern', tx: 18.2, ty: 15.6 },
-    { def: 'crate', tx: 19.6, ty: 14.4 },
+    { def: 'crate', tx: 19.6, ty: 14.4, inspect: 'crate_yard' },
     { def: 'crate', tx: 20.7, ty: 15.1 },
     { def: 'oak0', tx: 8.3, ty: 12.4 },
     { def: 'bush1', tx: 9.6, ty: 15.2 },
@@ -104,9 +104,9 @@ export const HOMESTEAD: AreaData = {
     { def: 'rock2', tx: 10.2, ty: 17.4 },
 
     // --- the crossroads ---------------------------------------------------
-    { def: 'sign', tx: 16.1, ty: 20.4 },
+    { def: 'sign', tx: 16.1, ty: 20.4, inspect: 'sign_crossroads' },
     { def: 'lantern', tx: 29.0, ty: 20.3 },
-    { def: 'stump', tx: 24.6, ty: 19.2 },
+    { def: 'stump', tx: 24.6, ty: 19.2, inspect: 'stump_old' },
     { def: 'rock0', tx: 35.4, ty: 19.6 },
     { def: 'bush0', tx: 36.9, ty: 20.3 },
     { def: 'oak1', tx: 41.6, ty: 18.7 },
@@ -121,7 +121,7 @@ export const HOMESTEAD: AreaData = {
     { def: 'oak2', tx: 52.4, ty: 24.2 },
 
     // --- the pond ---------------------------------------------------------
-    { def: 'dock', tx: 18, ty: 31 },
+    { def: 'dock', tx: 18, ty: 31, inspect: 'dock' },
     { def: 'dock', tx: 17, ty: 31 },
     { def: 'dock', tx: 16, ty: 31 },
     { def: 'dock', tx: 15, ty: 31 },
@@ -134,11 +134,11 @@ export const HOMESTEAD: AreaData = {
     { def: 'stump', tx: 22.4, ty: 33.1 },
 
     // --- the two markers --------------------------------------------------
-    { def: 'bellMarker', tx: 50.6, ty: 8.4 },
+    { def: 'bellMarker', tx: 50.6, ty: 8.4, inspect: 'bell_wood' },
     { def: 'bush2', tx: 49.1, ty: 9.2 },
     { def: 'bush0', tx: 52.2, ty: 9.4 },
     { def: 'rock1', tx: 51.4, ty: 6.6 },
-    { def: 'bellMarker', tx: 22.9, ty: 29.6 },
+    { def: 'bellMarker', tx: 22.9, ty: 29.6, inspect: 'bell_pond' },
     { def: 'bush1', tx: 24.1, ty: 30.4 },
 
     // --- odds and ends that suggest the place was lived in -----------------

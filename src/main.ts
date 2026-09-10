@@ -22,6 +22,8 @@ import { Renderer, VIEW_H, VIEW_W } from './render/renderer.ts';
 import { GameAudio, type Ground } from './systems/audio.ts';
 import { Farm, type Plot } from './systems/farm.ts';
 import { Inventory } from './systems/inventory.ts';
+import { Dialogue } from './systems/dialogue.ts';
+import { resolveInspect } from './data/inspect.ts';
 import * as Save from './systems/save.ts';
 import { Music } from './systems/music.ts';
 import { FX, Particles } from './systems/particles.ts';
@@ -30,7 +32,8 @@ import { Weather } from './systems/weather.ts';
 import { DebugOverlay } from './ui/debug.ts';
 import { Hotbar } from './ui/hotbar.ts';
 import { Hud, TitleCard, Toast } from './ui/hud.ts';
-import { drawTarget, type TargetKind } from './ui/target.ts';
+import { drawDialogue } from './ui/dialogueBox.ts';
+import { drawLookHint, drawTarget, type TargetKind } from './ui/target.ts';
 import { drawVignette } from './ui/panel.ts';
 import { Mat, TILE } from './world/materials.ts';
 import { World, type Drawable } from './world/world.ts';
@@ -55,6 +58,13 @@ class Game {
   private hud = new Hud();
   private hotbar = new Hotbar();
   private toast = new Toast();
+  private dialogue = new Dialogue();
+  /** Inspect keys the player has read, so the world can notice. */
+  private seen = new Set<string>();
+  /** The thing the player could look at right now, if anything. */
+  private lookTarget: { key: string; x: number; y: number; top: number } | null = null;
+  /** The title card hands control over exactly once. */
+  private titleReleased = false;
   private inventory = new Inventory();
   private farm: Farm;
   /** The tile the player is facing, and what acting on it would do. */
@@ -122,6 +132,12 @@ class Game {
       draw: (ctx, camX, camY) => this.player.draw(ctx, camX, camY),
     };
 
+    // Control comes back when the box has finished closing, not the instant
+    // the last line is dismissed — otherwise you walk away mid-animation.
+    this.dialogue.onClosed = () => {
+      this.player.frozen = false;
+    };
+
     this.loop = new Loop({ update: (dt) => this.update(dt), render: () => this.render() });
     this.loop.start();
 
@@ -145,6 +161,9 @@ class Game {
         inventory: this.inventory,
         target: () => ({ tx: this.targetTx, ty: this.targetTy, kind: this.targetKind }),
         select: (i: number) => this.inventory.select(i),
+        dialogue: () => ({ open: +this.dialogue.open.toFixed(2), blocking: this.dialogue.blocking, text: this.dialogue.visibleText, page: this.dialogue.pageIndex, pages: this.dialogue.pageCount, complete: this.dialogue.lineComplete }),
+        look: () => this.lookTarget,
+        seen: () => [...this.seen],
         save: () => this.saveGame(true),
         load: () => this.loadGame(),
         wipeSave: () => Save.clear(),
@@ -234,6 +253,26 @@ class Game {
     this.targetTx = Math.floor(p.x / TILE);
     this.targetTy = Math.floor(p.y / TILE);
     this.targetKind = this.actionAt(this.targetTx, this.targetTy);
+    this.lookTarget = this.findLookTarget(p.x, p.y);
+  }
+
+  /** The nearest thing worth looking at — a prop, or the farmhouse door. */
+  private findLookTarget(x: number, y: number): { key: string; x: number; y: number; top: number } | null {
+    const prop = this.world.inspectableAt(x, y);
+    if (prop?.inspect) {
+      // Anchor the hint to the top of the actual sprite. A fixed offset floats
+      // uselessly high over a signpost and buries itself in a standing stone.
+      let top = 0;
+      for (const layer of prop.def.layers) top = Math.min(top, layer.dy);
+      return { key: prop.inspect, x: prop.x, y: prop.y, top: prop.y + top };
+    }
+    const door = this.world.doorPoint;
+    if (door) {
+      const dx = door.x - x;
+      const dy = door.y - y;
+      if (dx * dx + dy * dy < 16 * 16) return { key: 'house_door', x: door.x, y: door.y, top: door.y - 26 };
+    }
+    return null;
   }
 
   private actionAt(tx: number, ty: number): TargetKind {
@@ -254,6 +293,20 @@ class Game {
   /** Press E. The held item and the tile decide what happens. */
   private act(): void {
     const kind = this.targetKind;
+    // Something unread directly in front of you wins over farming: standing at
+    // a standing stone with a hoe and pressing E, you meant to read it. Once
+    // you have, the same key falls through to the tool — so the world tells
+    // you a thing once and then gets out of the way.
+    if (this.lookTarget && (!this.seen.has(this.lookTarget.key) || !kind)) {
+      const lines = resolveInspect(this.lookTarget.key, this.seen);
+      if (lines) {
+        this.dialogue.say(lines);
+        this.seen.add(this.lookTarget.key);
+        this.player.frozen = true;
+        this.audio.blip(2, 0.04);
+        return;
+      }
+    }
     if (!kind) return;
     const tx = this.targetTx;
     const ty = this.targetTy;
@@ -427,9 +480,16 @@ class Game {
     }
 
     this.title.update(dt, this.input.anyInputYet);
-    if (this.title.done && this.player.frozen) this.player.frozen = false;
+    // One-shot. Written as `if (frozen) frozen = false` it fought every other
+    // thing that wants to hold the player still — dialogue most of all.
+    if (this.title.done && !this.titleReleased) {
+      this.titleReleased = true;
+      this.player.frozen = false;
+    }
     this.hud.alpha = clamp(this.hud.alpha + (this.title.dismissed ? dt * 1.4 : -dt * 2), 0, 1);
-    this.hotbar.alpha = this.hud.alpha;
+    // The hotbar steps aside while the box is open; it is the one piece of UI
+    // that would sit directly behind it.
+    this.hotbar.alpha = clamp(this.hotbar.alpha + (this.dialogue.active ? -dt * 5 : dt * 4), 0, this.hud.alpha);
 
     this.clock.update(dt);
     this.weather.update(dt);
@@ -450,6 +510,26 @@ class Game {
       this.rainedToday = true;
     }
     this.farm.update(dt);
+
+    this.dialogue.update(dt);
+    if (this.dialogue.blocking) {
+      // The box has the keyboard. Nothing else reads input this frame.
+      if (this.input.wasPressed('interact')) {
+        this.dialogue.advance();
+        this.audio.blip(this.dialogue.blocking ? 5 : 0, 0.03);
+      } else if (this.input.wasPressed('cancel')) {
+        this.dialogue.dismiss();
+      }
+      this.player.update(dt, this.input, this.world.blocked, this.time);
+      this.hotbar.update(dt, this.inventory);
+      this.toast.update(dt);
+      this.input.endFrame();
+      this.camera.follow(this.player.x, this.player.focusY, 0, 0, dt);
+      this.playerDrawable.sortY = this.player.y;
+      this.playerDrawable.shadowX = this.player.x;
+      this.playerDrawable.shadowY = this.player.y;
+      return;
+    }
 
     this.player.update(dt, this.input, this.world.blocked, this.time);
     this.updateTarget();
@@ -500,6 +580,12 @@ class Game {
     // that stands on it.
     this.farm.drawSoil(ctx, camX, camY, VIEW_W + 1, VIEW_H + 1);
     drawTarget(ctx, this.targetTx, this.targetTy, camX, camY, this.targetKind, this.time);
+    // Shown exactly when E would open the box — a hint that lies about what a
+    // key does is worse than no hint at all.
+    const wouldRead = this.lookTarget && (!this.seen.has(this.lookTarget.key) || !this.targetKind);
+    if (wouldRead && this.lookTarget && !this.dialogue.active) {
+      drawLookHint(ctx, this.lookTarget.x, this.lookTarget.top - 5, camX, camY, this.time);
+    }
     // Ripples belong on the water surface; splashes belong on the ground, under
     // anything standing on it.
     this.rain.drawWaterRings(ctx, this.time, this.weather.rain, camX, camY, world.isWater);
@@ -540,6 +626,7 @@ class Game {
     this.hud.draw(uctx, clock);
     this.hotbar.draw(uctx, this.inventory, VIEW_W, VIEW_H, this.time);
     this.toast.draw(uctx, VIEW_W, VIEW_H);
+    drawDialogue(uctx, this.dialogue, VIEW_W, VIEW_H, this.time);
     this.title.draw(uctx, VIEW_W, VIEW_H);
     this.debug.drawUi(uctx, this.loop, this.player, world, clock, this.weather, this.particles);
 

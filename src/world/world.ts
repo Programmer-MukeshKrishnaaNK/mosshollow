@@ -80,13 +80,14 @@ export class World {
 
   // --- construction ---------------------------------------------------------
 
-  private add(defId: string, x: number, y: number, rng: Rng): void {
+  private add(defId: string, x: number, y: number, rng: Rng, inspect?: string): void {
     const def = this.defs[defId];
     if (!def) throw new Error(`No prop definition "${defId}"`);
     this.props.push({
       def,
       x,
       y,
+      inspect: inspect ?? def.inspect,
       phase: rng() * TAU,
       // A spread of stiffness across a stand of trees: some move a lot more
       // than others, which is most of what stops them looking like clones.
@@ -101,7 +102,7 @@ export class World {
 
   private placeAuthored(rng: Rng): void {
     for (const p of this.data.props) {
-      this.add(this.pickDef(p.def, p.tx, p.ty), p.tx * TILE, p.ty * TILE, rng);
+      this.add(this.pickDef(p.def, p.tx, p.ty), p.tx * TILE, p.ty * TILE, rng, p.inspect);
     }
   }
 
@@ -502,6 +503,37 @@ export class World {
         return s * amp * Math.pow(t, bias);
       });
     }
+  }
+
+  /**
+   * The nearest thing worth looking at, within reach of a point. Props are
+   * measured from their base, and the search is a plain scan of the visible
+   * set — there are never enough inspectable props for this to be worth
+   * indexing, and pretending otherwise would be the wrong kind of clever.
+   */
+  inspectableAt(x: number, y: number, radius = 15): Prop | null {
+    let best: Prop | null = null;
+    let bestD = radius * radius;
+    for (const p of this.props) {
+      if (!p.inspect) continue;
+      const dx = p.x - x;
+      const dy = (p.y - 4) - y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  /** Where the farmhouse door is in world pixels, or null if there is no house. */
+  get doorPoint(): { x: number; y: number } | null {
+    if (!this.house) return null;
+    return {
+      x: this.housePos.x - this.house.sprite.ox + this.house.door.x,
+      y: this.housePos.y - this.house.sprite.oy + this.house.door.y,
+    };
   }
 
   /** What the ground is made of at a point — used for footstep effects. */

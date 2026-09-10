@@ -29,7 +29,8 @@ save.
 |---|---|
 | `W` `A` `S` `D` / arrows | walk |
 | `Shift` | run |
-| `E` / `Space` | use what you're holding |
+| `E` / `Space` | look at things, use what you're holding |
+| `Esc` | close the dialogue box |
 | `1` – `6` | choose a hotbar slot |
 | `` ` `` | debug overlay (press again for collision boxes, again to hide) |
 | `T` | step the clock on an hour *(development)* |
@@ -77,6 +78,12 @@ save.
 - **A swing worth swinging.** The hoe winds up, *holds* — that pause is the
   anticipation the whole thing rests on — snaps through, throws soil, shakes
   the camera a pixel, and follows through into a recovery you can walk out of.
+- **A valley that talks back.** The signpost, the crates, the dock, the lanterns
+  and two standing stones nobody will explain all have something to say when
+  you look at them. The second stone's text changes if you found the first —
+  noticing the pattern is the discovery, not the stone. A quiet chevron marks
+  anything worth reading, and appears only when the interact key would actually
+  read it.
 - **It remembers.** The valley saves itself every morning and whenever you
   close the tab, and picks up where you left off. The loader treats every field
   in the file as optional and validates content ids against the game's data, so
@@ -94,9 +101,10 @@ src/
   world/      tilemap, prop registry, area assembly, collision, depth sort
   entities/   player, animator
   systems/    time of day, weather, particles, audio, music, farm, inventory,
-              save/load
+              dialogue, save/load
   ui/         bitmap font, panels, HUD, debug overlay
-  data/       area content (ASCII maps and prop placements)
+  data/       area content — ASCII maps, prop placements, crops, items, and
+              everything the world says when you look at it
 ```
 
 `docs/ARCHITECTURE.md` goes into the systems; `docs/STATUS.md` is the running

@@ -21,6 +21,39 @@ const COLOR: Record<Exclude<TargetKind, null>, string> = {
   clear: PALETTE.stone1,
 };
 
+/**
+ * A small bobbing chevron over something worth looking at.
+ *
+ * Without it, the writing on the standing stones is discoverable only by
+ * pressing the interact key at every object in the valley — which is to say,
+ * not discoverable. It is deliberately quiet: the same shape as the dialogue
+ * box's advance caret, so the two read as the same idea.
+ */
+export function drawLookHint(
+  ctx: CanvasRenderingContext2D,
+  wx: number,
+  wy: number,
+  camX: number,
+  camY: number,
+  time: number,
+): void {
+  const bob = Math.round(Math.sin(time * 3.1) * 1.4);
+  const x = Math.round(wx - camX);
+  const y = Math.round(wy - camY) + bob;
+  ctx.globalAlpha = 0.85;
+  // Point-down chevron with a dark rim, so it reads over foliage as well as sky.
+  ctx.fillStyle = PALETTE.ink;
+  ctx.fillRect(x - 4, y - 1, 9, 1);
+  ctx.fillRect(x - 3, y, 7, 1);
+  ctx.fillRect(x - 2, y + 1, 5, 1);
+  ctx.fillRect(x - 1, y + 2, 3, 1);
+  ctx.fillStyle = PALETTE.cream0;
+  ctx.fillRect(x - 3, y - 1, 7, 1);
+  ctx.fillRect(x - 2, y, 5, 1);
+  ctx.fillRect(x - 1, y + 1, 3, 1);
+  ctx.globalAlpha = 1;
+}
+
 export function drawTarget(
   ctx: CanvasRenderingContext2D,
   tx: number,

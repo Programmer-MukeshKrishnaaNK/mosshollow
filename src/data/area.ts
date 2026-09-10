@@ -10,6 +10,8 @@ export interface PropPlacement {
    *  tile centres looks like a spreadsheet. */
   tx: number;
   ty: number;
+  /** Key into the inspect table. Overrides the prop definition's default. */
+  inspect?: string;
 }
 
 export interface FenceRun {

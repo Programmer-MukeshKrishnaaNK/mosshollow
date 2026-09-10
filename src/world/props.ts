@@ -54,12 +54,16 @@ export interface PropDef {
   sortBias?: number;
   /** Sheds leaves from this height while the wind blows. */
   sheds?: { rate: number; height: number; spread: number };
+  /** Default entry in the inspect table. A placement can override it. */
+  inspect?: string;
 }
 
 export interface Prop {
   def: PropDef;
   x: number;
   y: number;
+  /** Per-instance inspect key, so two identical stones can say different things. */
+  inspect?: string;
   /** Per-instance phase so no two things sway in unison. */
   phase: number;
   /** Per-instance sway scale, so a stand of trees is not one organism. */

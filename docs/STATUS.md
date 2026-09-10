@@ -40,6 +40,12 @@ survives being handed a file it was not expecting.
   anchored per facing and per phase, mirrored so it swings one-handed
 - Inventory and hotbar with six slots, stacking, and item flavour lines
 - HUD: almanac card with day, clock and sun/moon dial; title card
+- Dialogue: queued lines with a typewriter reveal, punctuation that holds a
+  beat, mid-reveal completion, page counter, and a box that takes the keyboard
+  while it is open
+- Eight inspectable objects with authored narration, one of which reads
+  differently once you have found its pair. An unread object takes priority
+  over the held tool; a read one falls through to it
 - Save/load: autosaves each morning and on tab hide, restores player, clock,
   weather, inventory and every worked plot. Every field is optional on the way
   in and content ids are validated against the data, so an old, a newer or a
@@ -81,6 +87,11 @@ Phase 4 — exploration. Resource gathering, and somewhere to go.
   Needs furrow remnants or a different reclaimed-grass treatment. Phase 3 will
   be rewriting this ground anyway.
 - Oak canopy variants are distinguishable but two of the three are close.
+
+**Also verified:** every inspectable object opens with the right page count in
+four sky states across five times of day, cancel closes the box and returns
+control, movement is locked while it is open, and pressing the interact key
+mid-reveal completes the line rather than skipping it. No runtime errors.
 
 ## Next task
 
@@ -136,6 +147,12 @@ not belong in this game); procedural cave levels (scope).
   takes a default, and every content id is checked against the data. Losing one
   plant to a removed crop is a bug report; losing the farm is a ruined
   afternoon.
+- **An unread object outranks the held tool; a read one does not.** Standing at
+  a standing stone with a hoe, pressing E means "read this". Pressing it again
+  means "till". Without that rule the pond marker was unreadable while holding
+  a hoe, because the grass in front of it was tillable.
+- **The look hint appears exactly when the key would read.** A hint that lies
+  about what a button does is worse than no hint.
 - **A version newer than this build is refused outright.** Reading it would
   silently discard whatever it knows that this build does not, and then write
   the loss back on the next autosave.
