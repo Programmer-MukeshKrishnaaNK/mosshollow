@@ -104,10 +104,15 @@ const GLYPHS: Record<string, string> = {
   '>': '.#...|..#..|...#.|...#.|..#..|.#...|.....|.....',
   '~': '.....|.....|.##.#|#..#.|.....|.....|.....|.....',
   '•': '.....|.....|.##..|.##..|.....|.....|.....|.....',
+  // Used as a separator in the HUD and menus. Without it the font's fallback
+  // renders a question mark, which is how "Mosshollow · Day 1" spent a while
+  // reading as "Mosshollow ? Day 1".
+  '·': '.....|.....|.....|..#..|.....|.....|.....|.....',
+  '—': '.....|.....|.....|#####|.....|.....|.....|.....',
 };
 
 /** Per-glyph advance width, trimmed so text does not look gappy. */
-const ADVANCE: Record<string, number> = { ' ': 3, i: 3, j: 4, l: 4, '.': 2, ',': 3, ':': 2, ';': 3, "'": 2, '!': 2, I: 4, '-': 4 };
+const ADVANCE: Record<string, number> = { ' ': 3, i: 3, j: 4, l: 4, '.': 2, ',': 3, ':': 2, ';': 3, "'": 2, '!': 2, I: 4, '-': 4, '·': 2 };
 
 const cache = new Map<string, HTMLCanvasElement>();
 
@@ -136,6 +141,22 @@ Object.keys(GLYPHS).forEach((k, i) => {
   INDEX[k] = i;
 });
 
+/**
+ * Characters asked for that the font does not have. They render as '?', which
+ * is visible but easy to miss in a screenshot — so in development each one is
+ * reported the first time it is used. A UI that quietly says "Day ? 1" is the
+ * kind of thing that ships.
+ */
+const missing = new Set<string>();
+
+function noteMissing(ch: string): void {
+  if (missing.has(ch)) return;
+  missing.add(ch);
+  console.warn(
+    `[font] no glyph for ${JSON.stringify(ch)} (U+${ch.codePointAt(0)?.toString(16).toUpperCase().padStart(4, '0')}) — rendering '?'`,
+  );
+}
+
 export function charWidth(ch: string): number {
   return (ADVANCE[ch] ?? GW) + 1;
 }
@@ -160,7 +181,11 @@ export function drawText(
   let cx = Math.round(x);
   const cy = Math.round(y);
   for (const ch of text) {
-    const idx = INDEX[ch] ?? INDEX['?'];
+    let idx = INDEX[ch];
+    if (idx === undefined) {
+      if (import.meta.env.DEV) noteMissing(ch);
+      idx = INDEX['?'];
+    }
     ctx.drawImage(sheet, idx * GW, 0, GW, GH, cx, cy, GW, GH);
     cx += charWidth(ch);
   }

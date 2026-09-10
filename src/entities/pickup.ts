@@ -113,7 +113,12 @@ export class Pickups {
         const dist = Math.hypot(dx, dy) || 1;
         // Accelerating rather than moving at a fixed speed: a drop that starts
         // slow and arrives fast reads as being pulled.
-        const pull = 340;
+        //
+        // With the damping below this settles at about 63 px/s — deliberately
+        // faster than a walk. At 340 it topped out slower than the player and
+        // a drop could never catch someone walking away from it, which reads
+        // as the pickup being broken rather than as a considered speed.
+        const pull = 620;
         d.vx += (dx / dist) * pull * dt;
         d.vy += (dy / dist) * pull * dt;
         d.vx *= 0.86;

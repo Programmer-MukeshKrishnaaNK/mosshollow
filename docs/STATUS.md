@@ -1,10 +1,10 @@
 # Project status
 
-Updated: 2026-09-10
+Updated: 2026-09-11
 
 ## Current build
 
-Phases 1 to 4 complete, plus persistence — the visual foundation, the
+Phases 1 to 4 and 6 complete, plus persistence — the visual foundation, the
 atmosphere over it, a farming loop you can run start to finish, and a save that
 survives being handed a file it was not expecting.
 
@@ -40,6 +40,18 @@ survives being handed a file it was not expecting.
   anchored per facing and per phase, mirrored so it swings one-handed
 - Inventory and hotbar with six slots, stacking, and item flavour lines
 - HUD: almanac card with day, clock and sun/moon dial; title card
+- The Ledger: one screen, three tabs — a 32-slot satchel whose first row is the
+  hotbar, a workbench, and the project board's list. Pointer-first and
+  keyboard-complete; every control is a rectangle in game coordinates
+- Pointer abstraction over pointer events, reporting in game coordinates, so
+  mouse and touch arrive through one path
+- Crafting: raw wood and stone refine into the planks and blocks every project
+  is built from; produce turns back into seed; compost from a surplus harvest
+- Six projects that visibly rebuild the valley — three farmhouse levels, the
+  field fence, the dock, lamps along the track, a lamp at the ruin. Effects are
+  declarative and re-applied from the save, so a project's result can be
+  improved later and existing saves get the better version
+- Pause menu with a two-step Start Over that says what will be lost
 - Gathering: axe and pick, trees that fell into stumps and stumps that can be
   grubbed out, rocks that break and free the ground under them, guarded border
   woods that do not yield
@@ -66,9 +78,9 @@ survives being handed a file it was not expecting.
 - Debug overlay, art sheet (5 pages incl. an animation filmstrip), deterministic
   dev stepper with pause/resume
 
-**Measured:** 5.4 ms/frame in the homestead and 2.4 ms in the meadow, day or
-night, clear or raining — against a 16.7 ms budget. 8.6 MB heap with both areas
-built and held in memory.
+**Measured:** 5.9-6.2 ms/frame in the homestead — day, night, raining, and with
+any interface screen open — against a 16.7 ms budget; 2.4 ms in the meadow.
+9 MB heap with both areas built and held.
 Audio peaks at 0.30 with no clipping. Swept all four sky states against eight
 times of day with no runtime errors. Farm loop verified end to end: till,
 plant (seed consumed), water, seven watered days through all five growth
@@ -85,6 +97,12 @@ plots, absurd numbers — all load without a single throw. Production bundle
 Phase 4 — exploration. Resource gathering, and somewhere to go.
 
 ## Known issues
+
+- **The interface has not been used with a finger.** It is built for it — one
+  pointer path, hit-testing in game coordinates, presses that cancel if you
+  slide off — but it has only been driven by a mouse and a keyboard so far.
+- No on-screen movement controls, so the game is not yet playable on a phone
+  even though the interface would be.
 
 - **The audio mix has never been heard.** It is verified by measurement only
   (the graph runs, levels respond to state, nothing clips). Balance between
@@ -109,15 +127,15 @@ mid-reveal completes the line rather than skipping it. No runtime errors.
 
 ## Next task
 
-Phase 6 — progression. Wood and stone currently have nowhere to go: crafting
-recipes, and upgrades that visibly change the world. The farmhouse builder
-already takes a level parameter for exactly this reason.
+Phase 5 — the settlement. It is the one phase still outstanding: people with
+names, schedules, somewhere to live, and something to say. The dialogue system
+already deals in speakers and pages precisely so a conversation can use it
+without changes.
 
-Two smaller things that should land alongside it: a proper inventory screen
-(eight hotbar slots is no longer enough for four tools, two seeds, two crops
-and two materials), and a real "start over" in the UI — right now it means
-knowing about a URL parameter, and the first autosave then overwrites the old
-file.
+After that, Phase 7 (story) and Phase 8 (polish), and the Android build:
+the pointer layer is in and every control is already a rectangle in game
+coordinates, so what remains is on-screen movement controls and a touch-sized
+pass over the hotbar.
 
 ## Deferred, on purpose
 
@@ -188,6 +206,20 @@ not belong in this game); procedural cave levels (scope).
   point over left it one blow from gone on every reload.
 - **The border woods are scenery.** Their tiles stay solid regardless, so
   felling one would leave a visible gap you still could not walk through.
+- **One place decides whether the player can move.** It used to be half a dozen
+  scattered `frozen = true/false` writes and they fought each other: the title
+  card's release ran every frame and undid the dialogue's hold, so control came
+  back while the box was still closing. It is now derived from what is on
+  screen, and derived state cannot disagree with itself.
+- **Project effects are declarative and claimed once per world.** "Add three
+  lanterns" is not idempotent, so a world records which projects it has already
+  carried out — otherwise re-applying a save would put two lanterns in every
+  post hole.
+- **The upgrade has to be readable from across the yard.** Each farmhouse level
+  changes the roof's overall value and the building's silhouette rather than
+  adding detail, because detail is invisible at 480x270.
+- **Start Over is two screens and names what it destroys.** "Are you sure?"
+  tells nobody anything, and the safe option is the one already selected.
 - **A version newer than this build is refused outright.** Reading it would
   silently discard whatever it knows that this build does not, and then write
   the loss back on the next autosave.

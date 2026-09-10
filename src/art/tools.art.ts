@@ -339,3 +339,87 @@ export const ICON_STONE: PixelMap = [
   '...kffk.......',
   '....kk........',
 ];
+
+// --- refined materials ------------------------------------------------------
+
+export const ICON_PLANK: PixelMap = [
+  '..............',
+  '..kkkkkkkkkk..',
+  '.kzzzzzzzzzzk.',
+  '.kxxxxxxxxxxk.',
+  '.kzxxxxxxxxzk.',
+  '.kkkkkkkkkkkk.',
+  '..kkkkkkkkkk..',
+  '..kzzzzzzzzk..',
+  '..kxxxxxxxxk..',
+  '..kzxxxxxxzk..',
+  '..kkkkkkkkkk..',
+  '..............',
+  '..............',
+  '..............',
+];
+
+export const ICON_BLOCK: PixelMap = [
+  '..............',
+  '..kkkkkkkkkk..',
+  '.kaaassaaassk.',
+  '.kassdsassdsk.',
+  '.kkkkkkkkkkkk.',
+  '.kssaaassaaak.',
+  '.ksddsassdsak.',
+  '.kkkkkkkkkkkk.',
+  '..kaaassaaak..',
+  '..kassdsassk..',
+  '..kkkkkkkkkk..',
+  '..............',
+  '..............',
+  '..............',
+];
+
+export const ICON_COMPOST: PixelMap = [
+  '..............',
+  '.....kkk......',
+  '....k454k.....',
+  '...k45o45k....',
+  '..kop4o4pok...',
+  '..kpoolopok...',
+  '.kopllooplok..',
+  '.klooplpoolk..',
+  '.kplllplllpk..',
+  '..klllpllllk..',
+  '...kkkkkkkk...',
+  '..............',
+  '..............',
+  '..............',
+];
+
+/**
+ * The project board. Two posts, a plank face, and notices pinned to it — the
+ * one piece of interface furniture that lives in the world rather than on the
+ * screen.
+ */
+export const PROJECT_BOARD: PixelMap = [
+  '........................',
+  '.kkkkkkkkkkkkkkkkkkkkkk.',
+  'kzxxxxxxxxxxxxxxxxxxxxck',
+  'kzxwwwwwwwwwwwwwwwwwwxck',
+  'kzxwNNNNwwwwNNNNNNwwwxck',
+  'kzxwNMMNwwwwNMMMMNwwwxck',
+  'kzxwNMMNwwwwNMMMMNwwwxck',
+  'kzxwNNNNwwwwNNNNNNwwwxck',
+  'kzxwwwwwwwwwwwwwwwwwwxck',
+  'kzxwwNNNNNNwwwwNNNNwwxck',
+  'kzxwwNMMMMNwwwwNMMNwwxck',
+  'kzxwwNNNNNNwwwwNNNNwwxck',
+  'kzxwwwwwwwwwwwwwwwwwwxck',
+  'kzxxxxxxxxxxxxxxxxxxxxck',
+  '.kkkkkkkkkkkkkkkkkkkkkk.',
+  '.....kzxck......kzxck...',
+  '.....kzxck......kzxck...',
+  '.....kzxck......kzxck...',
+  '.....kzxck......kzxck...',
+  '.....kzxck......kzxck...',
+  '.....kzxck......kzxck...',
+  '.....k55ck......k55ck...',
+  '......kkk........kkk....',
+];

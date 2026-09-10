@@ -27,7 +27,8 @@ export class Inventory {
   lastChanged = -1;
   lastChangedAt = 0;
 
-  constructor(size = HOTBAR_SIZE * 2) {
+  /** Four rows of eight. The satchel tab shows all of it. */
+  constructor(size = HOTBAR_SIZE * 4) {
     this.slots = Array.from({ length: size }, () => ({ id: null, count: 0 }));
   }
 
@@ -48,6 +49,19 @@ export class Inventory {
     let n = 0;
     for (const s of this.slots) if (s.id === id) n += s.count;
     return n;
+  }
+
+  /** Is there room for this many, without actually adding them? */
+  canFit(id: string, count: number): boolean {
+    const def = ITEMS[id];
+    if (!def) return false;
+    let room = 0;
+    for (const s of this.slots) {
+      if (s.id === null) room += def.stack;
+      else if (s.id === id) room += Math.max(0, def.stack - s.count);
+      if (room >= count) return true;
+    }
+    return room >= count;
   }
 
   /** Adds what it can and returns the remainder. */

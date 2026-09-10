@@ -32,6 +32,10 @@ save.
 | `E` / `Space` | look at things, use what you're holding |
 | `Esc` | close the dialogue box |
 | `1` – `8` | choose a hotbar slot |
+| `I` | open the satchel |
+| `Tab` | switch tabs while it's open |
+| `Esc` | pause menu, or close what's in front of you |
+| mouse / touch | everything in the interface |
 | `` ` `` | debug overlay (press again for collision boxes, again to hide) |
 | `T` | step the clock on an hour *(development)* |
 
@@ -97,6 +101,20 @@ save.
   third standing stone is in the middle of it, and it is the only one of the
   three that still has its bell. Walking into a gate takes it; there is nothing
   to press.
+- **A satchel, a workbench and a board.** One screen with three tabs, in the
+  same aged paper and thin wood as everything else: thirty-two slots with the
+  hotbar as its first row, recipes that turn raw wood and stone into the planks
+  and blocks every project is built from, and the list of work waiting to be
+  done. Pointer-first and keyboard-complete — every control is a rectangle in
+  game coordinates, so a finger will reach it as easily as a mouse.
+- **Progression you can walk up to.** Six projects, and not one of them
+  improves a number. The farmhouse goes from a mossy roof and bare windows, to
+  new shingles and shutters, to a porch, flower boxes and a weathervane. The
+  collapsed field fence closes. The dock reaches the old posts and you can
+  stand out over the water. Three lamps light the track end to end, which
+  changes the walk home entirely.
+- **A real way to start again.** A pause menu, and a second screen that says
+  plainly what is about to be lost before it does it.
 - **It remembers.** The valley saves itself every morning and whenever you
   close the tab, and picks up where you left off. The loader treats every field
   in the file as optional and validates content ids against the game's data, so
@@ -107,17 +125,17 @@ save.
 
 ```
 src/
-  core/       loop, fixed timestep, input, math, seeded noise
+  core/       loop, fixed timestep, keyboard, pointer, math, seeded noise
   art/        palette, pixel-map toolkit, authored sprites, generators
   render/     renderer, camera, lighting, terrain baker, water, clouds,
               rain, shadows
   world/      tilemap, prop registry, area assembly, collision, depth sort
   entities/   player, animator, dropped items
   systems/    time of day, weather, particles, audio, music, farm, inventory,
-              dialogue, area transitions, save/load
-  ui/         bitmap font, panels, HUD, debug overlay
-  data/       two areas — ASCII maps, prop placements, crops, items, and
-              everything the world says when you look at it
+              crafting, projects, dialogue, area transitions, save/load
+  ui/         bitmap font, panels, HUD, ledger, pause menu, debug overlay
+  data/       two areas — ASCII maps, prop placements, crops, items, recipes,
+              projects, and everything the world says when you look at it
 ```
 
 `docs/ARCHITECTURE.md` goes into the systems; `docs/STATUS.md` is the running
@@ -143,8 +161,8 @@ of the game.
 
 ## Status
 
-Early, but genuinely playable. Two connected areas, a farming loop you can run
-from bare ground to a full inventory, an axe and a pick that change the world
-permanently, and a thread of environmental storytelling that pays off if you
-follow it. Crafting, NPCs and quests are not built yet; see the roadmap in
-`docs/STATUS.md`.
+Genuinely playable end to end. Two connected areas; a farming loop from bare
+ground to a full satchel; an axe and a pick that change the world permanently;
+crafting and six building projects that rebuild the homestead in front of you;
+and a thread of environmental storytelling that pays off if you follow it.
+NPCs and quests are not built yet; see the roadmap in `docs/STATUS.md`.

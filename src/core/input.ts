@@ -21,7 +21,10 @@ export type Action =
   | 'slot5'
   | 'slot6'
   | 'slot7'
-  | 'slot8';
+  | 'slot8'
+  | 'ledger'
+  | 'tabNext'
+  | 'menu';
 
 const BINDINGS: Record<string, Action> = {
   KeyW: 'up',
@@ -37,9 +40,11 @@ const BINDINGS: Record<string, Action> = {
   KeyE: 'interact',
   Space: 'interact',
   Enter: 'interact',
-  Escape: 'cancel',
+  Escape: 'menu',
   Backquote: 'debug',
   KeyT: 'timeWarp',
+  KeyI: 'ledger',
+  Tab: 'tabNext',
   Digit1: 'slot1',
   Digit2: 'slot2',
   Digit3: 'slot3',
@@ -51,7 +56,7 @@ const BINDINGS: Record<string, Action> = {
 };
 
 /** Keys the browser would otherwise scroll or scrub the page with. */
-const SWALLOW = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
+const SWALLOW = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab']);
 
 export class Input {
   private held = new Set<Action>();

@@ -10,10 +10,12 @@
 import './style.css';
 
 import { Input } from './core/input.ts';
+import { Pointer } from './core/pointer.ts';
 import { FIXED_DT, Loop } from './core/loop.ts';
 import { clamp } from './core/math.ts';
 import { AREAS, START_AREA, area as areaData } from './data/areas.ts';
 import type { AreaExit } from './data/area.ts';
+import { PROJECTS } from './data/projects.ts';
 import { Pickups, type Drop } from './entities/pickup.ts';
 import { Player } from './entities/player.ts';
 import { Camera } from './render/camera.ts';
@@ -27,6 +29,10 @@ import { item, type ToolKind } from './data/items.ts';
 import type { Prop } from './world/props.ts';
 import { Inventory } from './systems/inventory.ts';
 import { Transition } from './systems/transition.ts';
+import { craft } from './systems/crafting.ts';
+import { Projects } from './systems/projects.ts';
+import type { ProjectDef } from './data/projects.ts';
+import { RECIPES, type RecipeDef } from './data/recipes.ts';
 import { Dialogue } from './systems/dialogue.ts';
 import { resolveInspect } from './data/inspect.ts';
 import * as Save from './systems/save.ts';
@@ -36,6 +42,8 @@ import { TimeOfDay } from './systems/time.ts';
 import { Weather } from './systems/weather.ts';
 import { DebugOverlay } from './ui/debug.ts';
 import { Hotbar } from './ui/hotbar.ts';
+import { Ledger } from './ui/ledger.ts';
+import { Menu } from './ui/menu.ts';
 import { Hud, TitleCard, Toast } from './ui/hud.ts';
 import { drawDialogue } from './ui/dialogueBox.ts';
 import { drawLookHint, drawTarget, type TargetKind } from './ui/target.ts';
@@ -46,6 +54,7 @@ import { World, type Drawable } from './world/world.ts';
 class Game {
   private renderer: Renderer;
   private input = new Input();
+  private pointer = new Pointer();
   private clock = new TimeOfDay(7.6);
   private weather = new Weather();
   private particles = new Particles();
@@ -73,12 +82,17 @@ class Game {
   /** What an axe or pick could work on right now. */
   private harvestTarget: Prop | null = null;
   private dialogue = new Dialogue();
+  private ledger = new Ledger();
+  private menu = new Menu();
+  private projects = new Projects();
   /** Inspect keys the player has read, so the world can notice. */
   private seen = new Set<string>();
   /** The thing the player could look at right now, if anything. */
   private lookTarget: { key: string; x: number; y: number; top: number } | null = null;
   /** The title card hands control over exactly once. */
   private titleReleased = false;
+  /** Set while a Start Over is in flight, to stop the autosave rewriting it. */
+  private wiping = false;
   private inventory = new Inventory();
   /** The tile the player is facing, and what acting on it would do. */
   private targetTx = 0;
@@ -104,6 +118,7 @@ class Game {
 
   constructor(container: HTMLElement) {
     this.renderer = new Renderer(container);
+    this.pointer.attach(this.renderer.display, VIEW_W, VIEW_H);
     this.clouds = new CloudShadows(this.renderer.ctx);
     this.enterAreaData(START_AREA);
 
@@ -112,7 +127,6 @@ class Game {
     this.player.onFootstep = (x, y) => this.onFootstep(x, y);
     this.player.onToolImpact = (tool) => this.onToolImpact(tool);
     this.player.onToolSustain = (tool, dt) => this.onToolSustain(tool, dt);
-    this.player.frozen = true; // released when the title card clears
 
     // What was left in the shed, and what somebody bothered to label.
     this.inventory.add('hoe', 1);
@@ -150,10 +164,6 @@ class Game {
 
     // Control comes back when the box has finished closing, not the instant
     // the last line is dismissed — otherwise you walk away mid-animation.
-    this.dialogue.onClosed = () => {
-      this.player.frozen = false;
-    };
-
     this.loop = new Loop({ update: (dt) => this.update(dt), render: () => this.render() });
     this.loop.start();
 
@@ -180,6 +190,18 @@ class Game {
         transition: () => ({ active: this.transition.active, phase: this.transition.phase, cover: +this.transition.cover.toFixed(2) }),
         props: () => this.world.props.filter((p) => !p.gone).length,
         harvestTarget: () => this.harvestTarget && { id: this.harvestTarget.def.id, hp: this.harvestTarget.hp, x: this.harvestTarget.x, y: this.harvestTarget.y },
+        ledger: () => ({ open: this.ledger.open, tab: this.ledger.tab, anim: +this.ledger.anim.toFixed(2), carrying: this.ledger.carrying }),
+        openLedger: (tab: 'items' | 'craft' | 'build' = 'items') => this.openLedger(tab),
+        closeLedger: () => this.closeLedger(),
+        menu: () => ({ open: this.menu.open, screen: this.menu.screen }),
+        openMenu: () => this.menu.show(),
+        projectStates: () => this.projects.visible().map((p) => ({ id: p.id, state: this.projects.state(p, this.inventory) })),
+        doneProjects: () => this.projects.doneList,
+        houseLevel: () => this.world.houseLevel,
+        give: (id: string, n: number) => this.inventory.add(id, n, this.time),
+        craftId: (id: string) => { const r = RECIPES.find((x) => x.id === id); if (r) this.tryCraft(r); },
+        buildId: (id: string) => { const p = PROJECTS.find((x) => x.id === id); if (p) this.tryBuild(p); },
+        click: (x: number, y: number) => { this.pointer.x = x; this.pointer.y = y; this.pointer.pressX = x; this.pointer.pressY = y; this.pointer.hovering = true; this.pointer.everUsed = true; this.pointer.released = true; },
         inventory: this.inventory,
         target: () => ({ tx: this.targetTx, ty: this.targetTy, kind: this.targetKind }),
         select: (i: number) => this.inventory.select(i),
@@ -246,15 +268,113 @@ class Game {
     return this.dropPools.get(this.areaId)!;
   }
 
-  /** Build an area if this is the first time, and make it the current one. */
-  private enterAreaData(id: string): void {
-    if (!this.worlds.has(id)) {
-      const world = new World(areaData(id), this.renderer.ctx, VIEW_W + 1, VIEW_H + 1);
+  /**
+   * Build an area if this is the first time. Any projects already finished
+   * there are re-applied as it is built, so a place you have not visited since
+   * commissioning the work still shows it when you arrive.
+   */
+  private ensureArea(id: string): World {
+    let world = this.worlds.get(id);
+    if (!world) {
+      world = new World(areaData(id), this.renderer.ctx, VIEW_W + 1, VIEW_H + 1);
       this.worlds.set(id, world);
       this.farms.set(id, new Farm(world.map));
       this.dropPools.set(id, new Pickups());
+      this.applyProjectsFor(id);
     }
+    return world;
+  }
+
+  private enterAreaData(id: string): void {
+    this.ensureArea(id);
     this.areaId = id;
+  }
+
+  /** Re-apply every finished project belonging to an area. */
+  private applyProjectsFor(id: string): void {
+    for (const p of PROJECTS) {
+      if (p.area === id && this.projects.isDone(p.id)) this.applyEffects(p);
+    }
+  }
+
+  /** Carry out a project's declared changes on the world it belongs to. */
+  private applyEffects(p: ProjectDef): void {
+    const world = this.worlds.get(p.area);
+    if (!world) return;
+    // Adding props is not idempotent, so a project is only ever carried out
+    // once per world.
+    if (!world.claimProject(p.id)) return;
+    for (const e of p.effects) {
+      if (e.kind === 'houseLevel') {
+        world.setHouseLevel(e.level);
+      } else if (e.kind === 'addProps') {
+        for (const np of e.props) world.addProp(np.def, np.tx * TILE, np.ty * TILE, np.inspect);
+      } else if (e.kind === 'walkable') {
+        for (const t of e.at) world.setWalkable(t.tx, t.ty);
+      }
+    }
+  }
+
+  /** Make one of a recipe, with the noise and the flash that go with it. */
+  private tryCraft(r: RecipeDef): void {
+    if (craft(this.inventory, r, this.time)) {
+      this.audio.blip(9, 0.05);
+      this.audio.blip(16, 0.04);
+      this.toast.show(`${item(r.out.item).name} x${r.out.count}`, 1.4);
+    } else {
+      this.audio.blip(-14, 0.045);
+    }
+  }
+
+  /**
+   * Commission a project. The world changes immediately, and loudly — this is
+   * the payoff for an hour of chopping and it should not be a quiet number.
+   */
+  private tryBuild(p: ProjectDef): void {
+    if (!this.projects.build(p, this.inventory)) {
+      this.audio.blip(-14, 0.045);
+      return;
+    }
+    this.applyEffects(p);
+    this.buildCelebration(p);
+    this.saveGame(false);
+  }
+
+  private buildCelebration(p: ProjectDef): void {
+    // Sawdust and a rising chord, wherever the work happened.
+    const world = this.worlds.get(p.area);
+    let fx = this.player.x;
+    let fy = this.player.y - 8;
+    if (world === this.world) {
+      const spot = firstEffectSpot(p);
+      if (spot) {
+        fx = spot.tx * TILE;
+        fy = spot.ty * TILE;
+      } else if (world.house) {
+        fx = world.housePos.x;
+        fy = world.housePos.y - 20;
+      }
+    }
+    this.particles.emit({
+      x: fx, y: fy, z: 6, count: 26, spread: 16,
+      vx: [-26, 26], vy: [-14, 14], vz: [18, 52],
+      life: [0.6, 1.2], size: [1, 2], gravity: 62, drag: 0.9,
+      ramp: ['gold', 'cream0', 'wood0', 'wood1'],
+    });
+    this.camera.shake(2.2, 0.3, 10);
+    [0, 4, 7, 12].forEach((n, i) => {
+      window.setTimeout(() => this.audio.blip(n, 0.055), i * 70);
+    });
+    this.toast.show(p.done, 4.2);
+  }
+
+  /** Wipe everything and begin again. Only ever reached through a confirm. */
+  private startOver(): void {
+    this.wiping = true;
+    Save.clear();
+    // Reload rather than rebuilding in place: it is the one path guaranteed to
+    // leave no trace of the old valley in any system's memory.
+    location.reload();
   }
 
   /** Walk through a gate. */
@@ -283,6 +403,8 @@ class Game {
 
   /** Write the whole world state. `announce` shows the toast. */
   private saveGame(announce = true): void {
+    // A Start Over is in flight; writing now would put the valley straight back.
+    if (this.wiping) return;
     const ok = Save.write({
       version: Save.SAVE_VERSION,
       savedAt: Date.now(),
@@ -301,6 +423,7 @@ class Game {
         }]),
       ),
       seen: [...this.seen],
+      projects: this.projects.doneList,
     });
     if (announce) this.toast.show(ok ? 'saved' : 'could not save');
   }
@@ -338,8 +461,67 @@ class Game {
       drops.restore(a.drops);
     }
     this.seen = new Set(data.seen);
+    // Restored before the areas are re-applied below, so a finished project is
+    // reflected in every world the save knew about.
+    this.projects.restore(data.projects);
+    for (const id of this.worlds.keys()) this.applyProjectsFor(id);
     this.camera.snapTo(this.player.x, this.player.focusY);
     return true;
+  }
+
+  /**
+   * The hotbar steps aside for anything drawn over it. Called from every
+   * branch of update, because the branches that open a screen are exactly the
+   * ones that return before the main path runs — which is why the hotbar sat
+   * visible underneath the pause menu on the first attempt.
+   */
+  private updateHudFade(dt: number): void {
+    const uiUp = this.dialogue.active || this.ledger.active || this.menu.active;
+    this.hotbar.alpha = clamp(this.hotbar.alpha + (uiUp ? -dt * 6 : dt * 4), 0, this.hud.alpha);
+    this.hotbar.update(dt, this.inventory);
+    this.toast.update(dt);
+  }
+
+  private ledgerHooks() {
+    return {
+      inventory: this.inventory,
+      projects: this.projects,
+      visibleProjects: this.projects.visible(),
+      onCraft: (r: RecipeDef) => this.tryCraft(r),
+      onBuild: (p: ProjectDef) => this.tryBuild(p),
+      onMoved: () => this.audio.blip(4, 0.035),
+      onCursor: () => this.audio.blip(8, 0.025),
+      onClose: () => this.closeLedger(),
+    };
+  }
+
+  private openLedger(tab: 'items' | 'craft' | 'build'): void {
+    this.ledger.show(tab);
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.audio.blip(5, 0.045);
+  }
+
+  private closeLedger(): void {
+    this.ledger.hide(this.inventory);
+    this.audio.blip(0, 0.04);
+  }
+
+  /**
+   * The single place that decides whether the player may move.
+   *
+   * This used to be half a dozen scattered `frozen = true/false` writes, and
+   * they fought: the title card's release ran every frame and undid the
+   * dialogue's hold, so control came back while the box was still closing.
+   * Derived state cannot disagree with itself.
+   */
+  private syncFreeze(): void {
+    this.player.frozen =
+      !this.titleReleased ||
+      this.transition.active ||
+      this.menu.active ||
+      this.ledger.active ||
+      this.dialogue.active;
   }
 
   /** Which tile the player is facing, and what pressing E there would do. */
@@ -402,12 +584,17 @@ class Game {
     // a standing stone with a hoe and pressing E, you meant to read it. Once
     // you have, the same key falls through to the tool — so the world tells
     // you a thing once and then gets out of the way.
+    // The board is a piece of interface that lives in the world: walking up to
+    // it and pressing E is how you find out that any of this exists.
+    if (this.lookTarget?.key === 'board') {
+      this.openLedger('build');
+      return;
+    }
     if (this.lookTarget && (!this.seen.has(this.lookTarget.key) || !kind)) {
       const lines = resolveInspect(this.lookTarget.key, this.seen);
       if (lines) {
         this.dialogue.say(lines);
         this.seen.add(this.lookTarget.key);
-        this.player.frozen = true;
         this.audio.blip(2, 0.04);
         return;
       }
@@ -629,6 +816,36 @@ class Game {
   private update(dt: number): void {
     this.time += dt;
 
+    // --- screens, in priority order ---------------------------------------
+    // Each one takes the keyboard entirely while it is up. Anything below it
+    // in this list does not run at all, which is what keeps "Escape closes the
+    // thing in front of me" from needing a state machine.
+    this.menu.update(dt, this.input, this.pointer, VIEW_W, VIEW_H, {
+      onResume: () => { this.menu.hide(); this.audio.blip(2, 0.04); },
+      onStartOver: () => this.startOver(),
+      onCursor: () => this.audio.blip(6, 0.03),
+      status: () => `${this.world.data.name} · Day ${this.clock.day} · ${this.clock.label}`,
+    });
+    if (this.menu.open) {
+      this.syncFreeze();
+      this.updateHudFade(dt);
+      if (this.input.wasPressed('menu')) { this.menu.hide(); this.audio.blip(2, 0.04); }
+      this.input.endFrame();
+      this.pointer.endFrame();
+      return;
+    }
+
+    if (this.ledger.open) {
+      this.syncFreeze();
+      this.ledger.update(dt, this.input, this.pointer, this.ledgerHooks());
+      if (this.input.wasPressed('menu') || this.input.wasPressed('ledger')) this.closeLedger();
+      this.updateHudFade(dt);
+      this.input.endFrame();
+      this.pointer.endFrame();
+      return;
+    }
+    this.ledger.update(dt, this.input, this.pointer, this.ledgerHooks());
+
     // Browsers will not let audio start without a gesture, so the first key
     // press is what brings the valley's sound up.
     if (this.input.anyInputYet && !this.audio.running) {
@@ -638,6 +855,14 @@ class Game {
       if (ctx && dest) this.music.attach(ctx, dest);
     }
     this.audio.resume();
+
+    if (this.input.wasPressed('ledger') && !this.dialogue.blocking && !this.transition.active) {
+      this.openLedger('items');
+    }
+    if (this.input.wasPressed('menu')) {
+      if (this.dialogue.blocking) this.dialogue.dismiss();
+      else if (!this.transition.active) { this.menu.show(); this.audio.blip(2, 0.04); }
+    }
 
     if (this.input.wasPressed('debug')) this.debug.toggle();
     // T steps the clock on an hour. The fastest way to check that dusk still
@@ -651,16 +876,11 @@ class Game {
     }
 
     this.title.update(dt, this.input.anyInputYet);
-    // One-shot. Written as `if (frozen) frozen = false` it fought every other
-    // thing that wants to hold the player still — dialogue most of all.
-    if (this.title.done && !this.titleReleased) {
-      this.titleReleased = true;
-      this.player.frozen = false;
-    }
+    if (this.title.done && !this.titleReleased) this.titleReleased = true;
     this.hud.alpha = clamp(this.hud.alpha + (this.title.dismissed ? dt * 1.4 : -dt * 2), 0, 1);
     // The hotbar steps aside while the box is open; it is the one piece of UI
     // that would sit directly behind it.
-    this.hotbar.alpha = clamp(this.hotbar.alpha + (this.dialogue.active ? -dt * 5 : dt * 4), 0, this.hud.alpha);
+    this.updateHudFade(dt);
 
     this.clock.update(dt);
     this.weather.update(dt);
@@ -688,13 +908,14 @@ class Game {
       if (this.input.wasPressed('interact')) {
         this.dialogue.advance();
         this.audio.blip(this.dialogue.blocking ? 5 : 0, 0.03);
-      } else if (this.input.wasPressed('cancel')) {
+      } else if (this.input.wasPressed('menu')) {
         this.dialogue.dismiss();
       }
+      this.syncFreeze();
       this.player.update(dt, this.input, this.world.blocked, this.time);
-      this.hotbar.update(dt, this.inventory);
-      this.toast.update(dt);
+      this.updateHudFade(dt);
       this.input.endFrame();
+      this.pointer.endFrame();
       this.camera.follow(this.player.x, this.player.focusY, 0, 0, dt);
       this.playerDrawable.sortY = this.player.y;
       this.playerDrawable.shadowX = this.player.x;
@@ -705,19 +926,18 @@ class Game {
     // The transition owns the player while it runs; nothing else reads input.
     this.transition.update(dt);
     if (this.transition.active) {
-      this.player.frozen = true;
+      this.syncFreeze();
       this.player.update(dt, this.input, this.world.blocked, this.time);
       this.camera.follow(this.player.x, this.player.focusY, 0, 0, dt);
-      this.hotbar.update(dt, this.inventory);
-      this.toast.update(dt);
+      this.updateHudFade(dt);
       this.playerDrawable.sortY = this.player.y;
       this.playerDrawable.shadowX = this.player.x;
       this.playerDrawable.shadowY = this.player.y;
       this.input.endFrame();
+      this.pointer.endFrame();
       return;
     }
-    if (this.titleReleased) this.player.frozen = false;
-
+    this.syncFreeze();
     this.player.update(dt, this.input, this.world.blocked, this.time);
 
     // Walking into a gate takes it. No key press: a gate you have to confirm
@@ -726,6 +946,7 @@ class Game {
     if (exit) {
       this.takeExit(exit);
       this.input.endFrame();
+      this.pointer.endFrame();
       return;
     }
 
@@ -734,8 +955,6 @@ class Game {
     if (this.input.wasPressed('interact') && !this.player.swinging && !this.player.frozen) {
       this.act();
     }
-    this.hotbar.update(dt, this.inventory);
-    this.toast.update(dt);
     this.world.update(
       dt, this.time, this.weather, this.clock, this.particles,
       this.camera.originX, this.camera.originY, VIEW_W, VIEW_H,
@@ -772,6 +991,7 @@ class Game {
     this.playerDrawable.shadowY = this.player.y;
 
     this.input.endFrame();
+    this.pointer.endFrame();
   }
 
   private render(): void {
@@ -839,6 +1059,13 @@ class Game {
     this.hotbar.draw(uctx, this.inventory, VIEW_W, VIEW_H, this.time);
     this.toast.draw(uctx, VIEW_W, VIEW_H);
     drawDialogue(uctx, this.dialogue, VIEW_W, VIEW_H, this.time);
+    this.ledger.draw(uctx, VIEW_W, VIEW_H, this.ledgerHooks(), this.pointer, this.time);
+    this.menu.draw(uctx, VIEW_W, VIEW_H, this.pointer, {
+      onResume: () => {},
+      onStartOver: () => {},
+      onCursor: () => {},
+      status: () => `${this.world.data.name} · Day ${this.clock.day} · ${this.clock.label}`,
+    });
     if (this.transition.cover > 0.001) {
       uctx.globalAlpha = this.transition.cover;
       uctx.fillStyle = '#0d0b11';
@@ -890,6 +1117,17 @@ class PickupDraw implements Drawable {
     if (!this.drop) return;
     Pickups.draw(ctx, this.drop, camX, camY, this.game.renderTime, this.game.renderSun);
   }
+}
+
+/** Where a project's work happens, for aiming the celebration at it. */
+function firstEffectSpot(p: ProjectDef): { tx: number; ty: number } | null {
+  for (const e of p.effects) {
+    if (e.kind === 'addProps' && e.props.length) {
+      const mid = e.props[Math.floor(e.props.length / 2)];
+      return { tx: mid.tx, ty: mid.ty };
+    }
+  }
+  return null;
 }
 
 function boot(): void {

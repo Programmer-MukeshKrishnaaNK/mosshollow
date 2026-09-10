@@ -20,6 +20,7 @@ import {
   FLOWER_RED, FLOWER_VIOLET, FLOWER_WHITE, LANTERN_POST, OAK_TRUNK, PEBBLE,
   REED, SIGN_POST, STUMP, TUFT_A, TUFT_B,
 } from '../art/props.art.ts';
+import { PROJECT_BOARD } from '../art/tools.art.ts';
 import type { PaletteKey } from '../art/palette.ts';
 import type { ToolKind } from '../data/items.ts';
 
@@ -289,6 +290,13 @@ export function buildProps(): Record<string, PropDef> {
       // Barely there. You should not be sure you saw it.
       { dx: 0, dy: -19, radius: 22, color: '#ffd884', intensity: 0.45, flickerAmount: 0.35, nightOnly: true },
     ],
+  };
+
+  const board = sprite(PROJECT_BOARD, 12, 23);
+  defs.projectBoard = {
+    id: 'projectBoard',
+    layers: [{ sprite: board, dx: -12, dy: -23, sway: 0 }],
+    collider: { dx: -11, dy: -4, w: 22, h: 4 },
   };
 
   const reed = sprite(REED, 5, 18);

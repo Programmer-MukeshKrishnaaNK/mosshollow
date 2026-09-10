@@ -27,7 +27,10 @@ const H = 720;
 const page = Number(new URLSearchParams(location.search).get('p') ?? 1);
 
 const canvas = makeCanvas(W, H);
-canvas.style.cssText = 'position:fixed;left:0;top:0;width:1280px;height:720px;image-rendering:pixelated';
+// Scale to the viewport width rather than sitting at a fixed size: the
+// pane this is inspected in is not always 1280 wide, and a clipped art sheet
+// is worse than a slightly scaled one.
+canvas.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:auto;image-rendering:pixelated';
 document.body.appendChild(canvas);
 document.body.style.cssText = 'margin:0;overflow:hidden;background:#141119';
 const ctx = ctxOf(canvas);
@@ -120,12 +123,14 @@ if (page === 1) {
 }
 
 if (page === 2) {
-  label('FARMHOUSE — 6x', 8, 8);
-  tile(buildFarmhouse(1).sprite, 8, 22, 6, 'farmhouse', PALETTE.fol4);
+  label('FARMHOUSE — the three levels, 3x', 8, 8);
+  [1, 2, 3].forEach((lvl, i) => {
+    tile(buildFarmhouse(lvl).sprite, 8 + i * 322, 22, 3, `level ${lvl}`, PALETTE.fol4);
+  });
   const defs = buildProps();
-  label('TREES — 5x', 660, 8);
-  ['oak0', 'oak1', 'birch0'].forEach((id, i) => {
-    tile(composed(defs[id]), 660 + i * 200, 22, 5, id, GRASS);
+  label('THE BOARD AND A TREE — 5x', 8, 330);
+  ['projectBoard', 'oak0'].forEach((id, i) => {
+    tile(composed(defs[id]), 8 + i * 300, 344, 5, id, GRASS);
   });
 }
 

@@ -67,7 +67,7 @@ const MAP = [
 
 export const HOMESTEAD: AreaData = {
   id: 'homestead',
-  name: 'Mosshollow',
+  name: 'The Homestead',
   seed: 20260910,
   map: MAP,
   spawn: { tx: 14.5, ty: 17.2 },
@@ -102,6 +102,7 @@ export const HOMESTEAD: AreaData = {
     { def: 'lantern', tx: 11.4, ty: 15.6, inspect: 'lantern_yard' },
     { def: 'lantern', tx: 18.2, ty: 15.6 },
     { def: 'crate', tx: 19.6, ty: 14.4, inspect: 'crate_yard' },
+    { def: 'projectBoard', tx: 9.8, ty: 19.4, inspect: 'board' },
     { def: 'crate', tx: 20.7, ty: 15.1 },
     { def: 'oak0', tx: 8.3, ty: 12.4 },
     { def: 'bush1', tx: 9.6, ty: 15.2 },

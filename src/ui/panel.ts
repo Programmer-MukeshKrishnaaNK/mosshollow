@@ -7,7 +7,9 @@
  * canvas HUD read as handmade instead of as a div.
  */
 
+import { hash2 } from '../core/rng.ts';
 import { PALETTE } from '../art/palette.ts';
+import { ctxOf, makeCanvas } from '../art/pixel.ts';
 
 export interface PanelStyle {
   /** Paper, or the darker slate used for dialogue. */
@@ -15,6 +17,14 @@ export interface PanelStyle {
   /** 0-1; panels fade in rather than appearing. */
   alpha?: number;
 }
+
+/**
+ * Panels are cached by size and tone. The paper grain is a per-pixel pass, and
+ * a full-screen panel is ninety thousand pixels — cheap once, wasteful sixty
+ * times a second, and the difference between comfortable and marginal on a
+ * phone.
+ */
+const cache = new Map<string, HTMLCanvasElement>();
 
 export function drawPanel(
   ctx: CanvasRenderingContext2D,
@@ -25,9 +35,23 @@ export function drawPanel(
   style: PanelStyle = {},
 ): void {
   const { tone = 'paper', alpha = 1 } = style;
-  if (alpha <= 0.01) return;
+  if (alpha <= 0.01 || w < 4 || h < 4) return;
+  const key = `${w}x${h}|${tone}`;
+  let sheet = cache.get(key);
+  if (!sheet) {
+    sheet = renderPanel(w, h, tone);
+    cache.set(key, sheet);
+  }
   const prev = ctx.globalAlpha;
   ctx.globalAlpha = prev * alpha;
+  ctx.drawImage(sheet, Math.round(x), Math.round(y));
+  ctx.globalAlpha = prev;
+}
+
+/** Draw one panel face into its own canvas. Called once per size. */
+function renderPanel(w: number, h: number, tone: 'paper' | 'night'): HTMLCanvasElement {
+  const canvas = makeCanvas(w, h);
+  const ctx = ctxOf(canvas);
 
   const body = tone === 'paper' ? PALETTE.cream1 : PALETTE.stone4;
   const bodyLit = tone === 'paper' ? PALETTE.cream0 : PALETTE.stone3;
@@ -37,26 +61,44 @@ export function drawPanel(
 
   const rect = (rx: number, ry: number, rw: number, rh: number, c: string): void => {
     ctx.fillStyle = c;
-    ctx.fillRect(Math.round(rx), Math.round(ry), Math.round(rw), Math.round(rh));
+    ctx.fillRect(rx, ry, rw, rh);
   };
 
   // outer contour, with the corners knocked off
-  rect(x + 1, y, w - 2, 1, PALETTE.ink);
-  rect(x + 1, y + h - 1, w - 2, 1, PALETTE.ink);
-  rect(x, y + 1, 1, h - 2, PALETTE.ink);
-  rect(x + w - 1, y + 1, 1, h - 2, PALETTE.ink);
+  rect(1, 0, w - 2, 1, PALETTE.ink);
+  rect(1, h - 1, w - 2, 1, PALETTE.ink);
+  rect(0, 1, 1, h - 2, PALETTE.ink);
+  rect(w - 1, 1, 1, h - 2, PALETTE.ink);
 
   // frame
-  rect(x + 1, y + 1, w - 2, h - 2, frame);
-  rect(x + 1, y + 1, w - 2, 1, frameLit);
-  rect(x + 1, y + h - 2, w - 2, 1, frameDark);
+  rect(1, 1, w - 2, h - 2, frame);
+  rect(1, 1, w - 2, 1, frameLit);
+  rect(1, h - 2, w - 2, 1, frameDark);
 
   // paper, lit slightly from the top
-  rect(x + 3, y + 3, w - 6, h - 6, body);
-  rect(x + 3, y + 3, w - 6, 2, bodyLit);
-  rect(x + 3, y + 3, 1, h - 6, bodyLit);
+  rect(3, 3, w - 6, h - 6, body);
+  rect(3, 3, w - 6, 2, bodyLit);
+  rect(3, 3, 1, h - 6, bodyLit);
 
-  ctx.globalAlpha = prev;
+  // Grain. A flat fill reads as a UI rectangle; a few hundred barely-visible
+  // specks read as paper.
+  const grain = tone === 'paper' ? PALETTE.cream0 : PALETTE.stone3;
+  const fleck = tone === 'paper' ? PALETTE.wood1 : PALETTE.inkCool;
+  ctx.fillStyle = grain;
+  for (let py = 4; py < h - 4; py++) {
+    for (let px = 4; px < w - 4; px++) {
+      if (hash2(px, py, 313) > 0.976) ctx.fillRect(px, py, 1, 1);
+    }
+  }
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = fleck;
+  for (let py = 5; py < h - 5; py++) {
+    for (let px = 5; px < w - 5; px++) {
+      if (hash2(px, py, 977) > 0.9965) ctx.fillRect(px, py, 1, 1);
+    }
+  }
+  ctx.globalAlpha = 1;
+  return canvas;
 }
 
 /** A soft vignette that pulls the eye toward the middle of the screen. */

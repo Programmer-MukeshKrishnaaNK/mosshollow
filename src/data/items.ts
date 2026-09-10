@@ -5,8 +5,9 @@
 
 import { sprite, type Sprite } from '../art/pixel.ts';
 import {
-  ICON_AXE, ICON_BELLROOT, ICON_CAN, ICON_HOE, ICON_PICK,
-  ICON_SEED_BELLROOT, ICON_SEED_WHEAT, ICON_STONE, ICON_WHEAT, ICON_WOOD,
+  ICON_AXE, ICON_BELLROOT, ICON_BLOCK, ICON_CAN, ICON_COMPOST, ICON_HOE,
+  ICON_PICK, ICON_PLANK, ICON_SEED_BELLROOT, ICON_SEED_WHEAT, ICON_STONE,
+  ICON_WHEAT, ICON_WOOD,
 } from '../art/tools.art.ts';
 
 export type ToolKind = 'hoe' | 'can' | 'axe' | 'pick';
@@ -54,6 +55,18 @@ export const ITEMS: Record<string, ItemDef> = {
   stone: def(
     { id: 'stone', name: 'Stone', kind: 'material', stack: 99, blurb: 'The valley is mostly this, under everything else.' },
     sprite(ICON_STONE, 7, 14),
+  ),
+  plank: def(
+    { id: 'plank', name: 'Plank', kind: 'material', stack: 99, blurb: 'Cut square. Everything that gets built starts here.' },
+    sprite(ICON_PLANK, 7, 14),
+  ),
+  block: def(
+    { id: 'block', name: 'Dressed Block', kind: 'material', stack: 99, blurb: 'Squared off, and heavier than it looks.' },
+    sprite(ICON_BLOCK, 7, 14),
+  ),
+  compost: def(
+    { id: 'compost', name: 'Compost', kind: 'material', stack: 99, blurb: 'Feeds a crop a whole day in an afternoon.' },
+    sprite(ICON_COMPOST, 7, 14),
   ),
   seed_bellroot: def(
     { id: 'seed_bellroot', name: 'Bellroot Seed', kind: 'seed', stack: 99, plants: 'bellroot', blurb: 'Somebody saved these, and labelled them twice.' },

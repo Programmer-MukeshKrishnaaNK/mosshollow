@@ -37,7 +37,15 @@ export class World {
   readonly water: WaterSurface;
   readonly defs: Record<string, PropDef>;
   readonly props: Prop[] = [];
-  readonly house: Building | null = null;
+  house: Building | null = null;
+  /** Which farmhouse the projects have built so far. */
+  houseLevel = 1;
+  /**
+   * Projects already carried out here. Effects like "add three lanterns" are
+   * not idempotent, so applying the same project twice would leave two
+   * lanterns in every post hole.
+   */
+  private applied = new Set<string>();
   housePos = { x: 0, y: 0 };
 
   /**
@@ -673,6 +681,49 @@ export class World {
     this.buckets.clear();
     this.buildColliders();
     this.shedders = this.props.filter((p) => p.def.sheds && !p.gone);
+  }
+
+  /**
+   * Rebuild the farmhouse at a new level. The solid footprint is the same at
+   * every level by design, so the collider does not need touching — the house
+   * changes what it looks like, not where it is.
+   */
+  setHouseLevel(level: number): void {
+    if (!this.data.house) return;
+    this.house = buildFarmhouse(level);
+    this.houseLevel = level;
+  }
+
+  /** True the first time it is asked about a project, false afterwards. */
+  claimProject(id: string): boolean {
+    if (this.applied.has(id)) return false;
+    this.applied.add(id);
+    return true;
+  }
+
+  /** Put a new prop into the world, e.g. when a project finishes. */
+  addProp(defId: string, x: number, y: number, inspect?: string): Prop | null {
+    const def = this.defs[defId];
+    if (!def) return null;
+    const rng = makeRng(Math.round(x * 131 + y * 977));
+    const prop: Prop = {
+      def,
+      x,
+      y,
+      phase: rng() * TAU,
+      swayScale: randRange(rng, 0.72, 1.34),
+      inspect: inspect ?? def.inspect,
+    };
+    this.props.push(prop);
+    this.props.sort((a, b) => (a.y + (a.def.sortBias ?? 0)) - (b.y + (b.def.sortBias ?? 0)));
+    this.addPropCollider(prop);
+    if (def.sheds) this.shedders.push(prop);
+    return prop;
+  }
+
+  /** Open a tile up — decking laid over water, mostly. */
+  setWalkable(tx: number, ty: number): void {
+    this.map.setSolid(tx, ty, false);
   }
 
   /** Swap a prop for another definition in place — a tree for its stump. */

@@ -44,6 +44,13 @@ export interface SaveData {
   areas: Record<string, AreaSave>;
   /** Inspect keys the player has read, so the world keeps noticing. */
   seen: string[];
+  /**
+   * Finished projects, by id. The state of the world they produced is *not*
+   * saved — the effects are declarative, so they are simply re-applied when
+   * each area is built. That means a project's result can be improved later
+   * and existing saves get the better version.
+   */
+  projects: string[];
 }
 
 export interface AreaSave {
@@ -207,6 +214,7 @@ export function read(): SaveData | null {
     },
     areas: readAreas(root, version),
     seen: arr(root.seen).filter((k): k is string => typeof k === 'string'),
+    projects: arr(root.projects).filter((k): k is string => typeof k === 'string'),
   };
 }
 
@@ -275,7 +283,10 @@ function readSlots(v: unknown): Slot[] {
   return arr(v).map((entry) => {
     const s = obj(entry);
     const id = typeof s.id === 'string' && s.id in ITEMS ? s.id : null;
-    const count = id ? Math.max(0, Math.floor(num(s.count, 0))) : 0;
+    // Clamped to the item's own stack limit: a file claiming 999 of something
+    // that stacks to 99 should not be able to mint items by being edited.
+    const cap = id ? ITEMS[id].stack : 0;
+    const count = id ? Math.max(0, Math.min(cap, Math.floor(num(s.count, 0)))) : 0;
     // A slot naming an item this build no longer has becomes an empty slot
     // rather than a crash or a phantom stack.
     return count > 0 ? { id, count } : { id: null, count: 0 };

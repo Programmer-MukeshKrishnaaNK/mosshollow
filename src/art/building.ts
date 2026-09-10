@@ -35,6 +35,18 @@ const FOUNDATION_BOTTOM = 90;
 const WALL_LEFT = 12;
 const WALL_RIGHT = 91;
 
+/**
+ * Three houses, not one house with a flag on it.
+ *
+ * Level 1 is the place as you found it: moss in the courses, bare windows,
+ * two empty post holes by the door.
+ * Level 2 is a sound roof — new shingles, the moss gone, shutters hung.
+ * Level 3 is somebody living here — porch posts and a rail, a box of flowers
+ * under each window, and a vane on the ridge.
+ *
+ * Each step has to be readable from across the yard, which is why they change
+ * the silhouette and the overall value of the roof rather than adding detail.
+ */
 export function buildFarmhouse(level = 1): Building {
   const canvas = makeCanvas(W, H);
   const ctx = ctxOf(canvas);
@@ -78,6 +90,8 @@ export function buildFarmhouse(level = 1): Building {
   const windows: { x: number; y: number }[] = [];
   for (const wx of [18, 74]) {
     drawWindow(ctx, wx, 52, 18, 18);
+    if (level >= 2) drawShutters(ctx, wx, 52, 18, 18);
+    if (level >= 3) drawFlowerBox(ctx, wx - 3, 74, 24);
     windows.push({ x: wx + 9, y: 61 });
   }
 
@@ -108,7 +122,9 @@ export function buildFarmhouse(level = 1): Building {
       const n = hash2(Math.floor((x + stagger) / 6), course, 11);
       const sideT = (x - x0) / Math.max(1, x1 - x0);
       // Light rakes across from the left, so the far slope sits a step darker.
-      const lit = 1 - sideT;
+      // A re-shingled roof is lifted a whole step: the point of the upgrade is
+      // that the house reads as brighter from the far side of the yard.
+      const lit = (1 - sideT) + (level >= 2 ? 0.2 : 0);
       let color: string;
       if (lit > 0.72) color = n > 0.7 ? PALETTE.wood0 : PALETTE.wood1;
       else if (lit > 0.4) color = n > 0.78 ? PALETTE.wood1 : PALETTE.wood2;
@@ -118,7 +134,9 @@ export function buildFarmhouse(level = 1): Building {
       const patch = noise2(x * 0.09, y * 0.16, 23);
       // Only the damp lower courses, only a little, and in the two darkest
       // greens — bright moss on a roof reads as paint, not as weather.
-      const mossiness = Math.max(0, t - 0.28) * 0.62 + (sideT > 0.62 ? 0.05 : 0);
+      // New shingles have not had time to grow anything.
+      const weathering = level >= 3 ? 0.06 : level >= 2 ? 0.14 : 1;
+      const mossiness = (Math.max(0, t - 0.28) * 0.62 + (sideT > 0.62 ? 0.05 : 0)) * weathering;
       if (patch > 1 - mossiness) {
         color = patch > 1 - mossiness * 0.35 ? PALETTE.fol6 : PALETTE.fol5;
       }
@@ -164,6 +182,12 @@ export function buildFarmhouse(level = 1): Building {
     px(doorX - 3, WALL_BOTTOM + 4, doorW + 6, 1, PALETTE.ink);
   }
 
+  // --- the porch, and the vane that says somebody is watching the weather ---
+  if (level >= 3) {
+    drawPorch(ctx, doorX - 4, doorW + 8, WALL_BOTTOM);
+    drawVane(ctx, W / 2 + ridgeHalf - 6, ROOF_TOP - 3);
+  }
+
   outlineSprite(ctx);
 
   return {
@@ -173,6 +197,99 @@ export function buildFarmhouse(level = 1): Building {
     door: { x: doorX + doorW / 2, y: WALL_BOTTOM + 4 },
     solid: { x: WALL_LEFT - 2, y: WALL_TOP + 6, w: WALL_RIGHT - WALL_LEFT + 5, h: FOUNDATION_BOTTOM - WALL_TOP - 6 },
   };
+}
+
+/** Board shutters, pinned back either side of the glass. */
+function drawShutters(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  for (const sx of [x - 8, x + w + 2]) {
+    ctx.fillStyle = PALETTE.wood2;
+    ctx.fillRect(sx, y - 1, 6, h + 2);
+    ctx.fillStyle = PALETTE.wood1;
+    ctx.fillRect(sx, y - 1, 1, h + 2);
+    ctx.fillStyle = PALETTE.wood3;
+    ctx.fillRect(sx + 5, y - 1, 1, h + 2);
+    // slats
+    for (let i = 2; i < h; i += 4) {
+      ctx.fillStyle = PALETTE.wood3;
+      ctx.fillRect(sx + 1, y - 1 + i, 4, 1);
+    }
+    ctx.fillStyle = PALETTE.ink;
+    ctx.fillRect(sx - 1, y - 1, 1, h + 2);
+    ctx.fillRect(sx + 6, y - 1, 1, h + 2);
+  }
+}
+
+/** A box under the sill, planted. The one bit of pure colour on the house. */
+function drawFlowerBox(ctx: CanvasRenderingContext2D, x: number, y: number, w: number): void {
+  ctx.fillStyle = PALETTE.wood2;
+  ctx.fillRect(x, y, w, 7);
+  ctx.fillStyle = PALETTE.wood1;
+  ctx.fillRect(x, y, w, 1);
+  ctx.fillStyle = PALETTE.wood3;
+  ctx.fillRect(x, y + 6, w, 1);
+  ctx.fillStyle = PALETTE.ink;
+  ctx.fillRect(x - 1, y, 1, 7);
+  ctx.fillRect(x + w, y, 1, 7);
+  // Planting: leaves along the top, with blossoms picked from the accents so
+  // it stays inside the same palette as the meadow it is looking at.
+  const blooms = [PALETTE.red, PALETTE.gold, PALETTE.pink, PALETTE.violet, PALETTE.white];
+  for (let i = 0; i < w; i++) {
+    const n = hash2(x + i, y, 61);
+    ctx.fillStyle = n > 0.5 ? PALETTE.fol3 : PALETTE.fol4;
+    ctx.fillRect(x + i, y - 1, 1, 1);
+    if (n > 0.82) {
+      ctx.fillStyle = blooms[Math.floor(hash2(x + i, y, 62) * blooms.length) % blooms.length];
+      ctx.fillRect(x + i, y - 2, 1, 1);
+    }
+  }
+}
+
+/** Two posts, a beam and a rail. The step was always there waiting for it. */
+function drawPorch(ctx: CanvasRenderingContext2D, x: number, w: number, baseY: number): void {
+  const top = baseY - 22;
+  for (const px of [x, x + w - 3]) {
+    ctx.fillStyle = PALETTE.wood2;
+    ctx.fillRect(px, top, 3, 24);
+    ctx.fillStyle = PALETTE.wood1;
+    ctx.fillRect(px, top, 1, 24);
+    ctx.fillStyle = PALETTE.ink;
+    ctx.fillRect(px - 1, top, 1, 24);
+    ctx.fillRect(px + 3, top, 1, 24);
+  }
+  // beam across the top
+  ctx.fillStyle = PALETTE.wood2;
+  ctx.fillRect(x - 2, top, w + 4, 4);
+  ctx.fillStyle = PALETTE.wood1;
+  ctx.fillRect(x - 2, top, w + 4, 1);
+  ctx.fillStyle = PALETTE.wood3;
+  ctx.fillRect(x - 2, top + 3, w + 4, 1);
+  ctx.fillStyle = PALETTE.ink;
+  ctx.fillRect(x - 3, top - 1, w + 6, 1);
+  // low rail either side of the doorway, leaving the middle open to walk through
+  const railY = baseY - 9;
+  for (const seg of [[x + 3, 9], [x + w - 12, 9]]) {
+    ctx.fillStyle = PALETTE.wood1;
+    ctx.fillRect(seg[0], railY, seg[1], 2);
+    ctx.fillStyle = PALETTE.wood3;
+    ctx.fillRect(seg[0], railY + 2, seg[1], 1);
+  }
+}
+
+/** A vane on the ridge. Small, and the first thing you notice has changed. */
+function drawVane(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = PALETTE.metal1;
+  ctx.fillRect(x, y - 12, 1, 12);
+  ctx.fillStyle = PALETTE.metal0;
+  // an arrow, pointing the way the wind was going when it stopped
+  ctx.fillRect(x - 4, y - 11, 9, 1);
+  ctx.fillRect(x + 3, y - 12, 1, 3);
+  ctx.fillRect(x + 4, y - 11, 1, 1);
+  ctx.fillRect(x - 4, y - 12, 1, 3);
+  ctx.fillStyle = PALETTE.gold;
+  ctx.fillRect(x, y - 14, 1, 2);
+  ctx.fillStyle = PALETTE.ink;
+  ctx.fillRect(x - 1, y - 10, 1, 1);
+  ctx.fillRect(x + 1, y - 10, 1, 1);
 }
 
 function drawWindow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
