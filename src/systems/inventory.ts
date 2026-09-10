@@ -96,6 +96,7 @@ export class Inventory {
 
   /** Replace all slots, e.g. from a save file. Tolerates a short list. */
   restore(slots: readonly Slot[], selected: number): void {
+    if (!Array.isArray(slots)) return;
     for (let i = 0; i < this.slots.length; i++) {
       const s = slots[i];
       this.slots[i].id = s?.id ?? null;

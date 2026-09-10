@@ -73,6 +73,11 @@ export const HOMESTEAD: AreaData = {
   spawn: { tx: 14.5, ty: 17.2 },
   house: { tx: 14.5, ty: 13 },
   forestBorder: 3,
+  exits: [
+    // East, through the gate, into the meadow. The track already ran this way;
+    // now it goes somewhere.
+    { x: 57, y: 20, w: 3, h: 4, to: 'meadow', entryTx: 4, entryTy: 20.6, facing: 'right' },
+  ],
   fences: [
     // The old field, fenced on three sides. The south side fell down years ago
     // and nobody put it back up.

@@ -4,7 +4,7 @@ Updated: 2026-09-10
 
 ## Current build
 
-Phases 1 to 3 complete, persistence, and the first half of Phase 4 — the visual foundation, the
+Phases 1 to 4 complete, plus persistence — the visual foundation, the
 atmosphere over it, a farming loop you can run start to finish, and a save that
 survives being handed a file it was not expecting.
 
@@ -46,11 +46,16 @@ survives being handed a file it was not expecting.
 - Dropped items: pop out with an arc and a bounce, settle where you can see
   them land, then home in and accelerate; a full inventory leaves them lying
   there rather than deleting them
+- Two areas joined by gates. Areas are built on first visit and kept; the swap
+  happens at full black, which is also where the terrain bake hides
+- Per-area farm, prop and drop state — walking away from a farm does not wipe it
 - Dialogue: queued lines with a typewriter reveal, punctuation that holds a
   beat, mid-reveal completion, page counter, and a box that takes the keyboard
   while it is open
-- Eight inspectable objects with authored narration, one of which reads
-  differently once you have found its pair. An unread object takes priority
+- Twelve inspectable objects with authored narration across both areas. Two of
+  them read differently depending on what you have already found — the third
+  standing stone gives five lines instead of three once you have seen the other
+  two, which is the payoff of the set. An unread object takes priority
   over the held tool; a read one falls through to it
 - Save/load: autosaves each morning and on tab hide, restores player, clock,
   weather, inventory and every worked plot. Every field is optional on the way
@@ -61,8 +66,9 @@ survives being handed a file it was not expecting.
 - Debug overlay, art sheet (5 pages incl. an animation filmstrip), deterministic
   dev stepper with pause/resume
 
-**Measured:** 3.5 ms/frame typical, 6.5 ms worst case (dense forest), and
-5.3 ms with 117 plots of mature crops on screen — against a 16.7 ms budget.
+**Measured:** 5.4 ms/frame in the homestead and 2.4 ms in the meadow, day or
+night, clear or raining — against a 16.7 ms budget. 8.6 MB heap with both areas
+built and held in memory.
 Audio peaks at 0.30 with no clipping. Swept all four sky states against eight
 times of day with no runtime errors. Farm loop verified end to end: till,
 plant (seed consumed), water, seven watered days through all five growth
@@ -103,13 +109,15 @@ mid-reveal completes the line rather than skipping it. No runtime errors.
 
 ## Next task
 
-Phase 4b — a second area. The meadow east of the gate: area registry, a
-transition that fades and swaps worlds, per-area farm and prop state in the
-save, and something over there worth the walk.
+Phase 6 — progression. Wood and stone currently have nowhere to go: crafting
+recipes, and upgrades that visibly change the world. The farmhouse builder
+already takes a level parameter for exactly this reason.
 
-After that, `?fresh` needs a real counterpart in the UI — right now starting
-over means knowing about a URL parameter, and the first autosave then
-overwrites the old file.
+Two smaller things that should land alongside it: a proper inventory screen
+(eight hotbar slots is no longer enough for four tools, two seeds, two crops
+and two materials), and a real "start over" in the UI — right now it means
+knowing about a URL parameter, and the first autosave then overwrites the old
+file.
 
 ## Deferred, on purpose
 
@@ -160,6 +168,17 @@ not belong in this game); procedural cave levels (scope).
   a hoe, because the grass in front of it was tillable.
 - **The look hint appears exactly when the key would read.** A hint that lies
   about what a button does is worse than no hint.
+- **The area swap happens at full black, not during the fade.** Building an
+  area bakes its terrain, which costs a couple of hundred milliseconds. During
+  the fade that visibly stalls the fade; on a black screen it is invisible.
+- **The fade in is slower than the fade out.** Leaving somewhere should feel
+  brisker than arriving.
+- **Gates are walked into, not pressed.** A gate you have to confirm is a door,
+  and these are gaps in a hedge.
+- **Exits are cut out of the border after it is built.** The order of those two
+  loops is the entire difference between a gate and a wall.
+- **The save is taken on arrival, not on departure.** Saved on the way out, a
+  reload puts you back in the doorway you just used.
 - **Prop changes are saved as mutations, not as a prop list.** Two thousand
   props are reproduced exactly by the seed; only the handful the player touched
   need storing, keyed by position rather than index because the array changes

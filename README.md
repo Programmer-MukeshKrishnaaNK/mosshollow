@@ -90,6 +90,13 @@ save.
   a beat so you see it land, then homes in as you approach. The deep woods
   around the edge don't yield — the tiles under them stay solid either way, and
   a gap you still couldn't walk through would be worse than no gap.
+- **Somewhere to go.** East through the gate is the meadow: a stream that
+  wanders the whole height of the map, crossed at one place on stones somebody
+  laid, an outcrop of boulders, a grove gone wild — and a cut stone floor, ten
+  metres by eight, with grass coming through it and no walls anywhere. The
+  third standing stone is in the middle of it, and it is the only one of the
+  three that still has its bell. Walking into a gate takes it; there is nothing
+  to press.
 - **It remembers.** The valley saves itself every morning and whenever you
   close the tab, and picks up where you left off. The loader treats every field
   in the file as optional and validates content ids against the game's data, so
@@ -107,9 +114,9 @@ src/
   world/      tilemap, prop registry, area assembly, collision, depth sort
   entities/   player, animator, dropped items
   systems/    time of day, weather, particles, audio, music, farm, inventory,
-              dialogue, save/load
+              dialogue, area transitions, save/load
   ui/         bitmap font, panels, HUD, debug overlay
-  data/       area content — ASCII maps, prop placements, crops, items, and
+  data/       two areas — ASCII maps, prop placements, crops, items, and
               everything the world says when you look at it
 ```
 
@@ -136,7 +143,8 @@ of the game.
 
 ## Status
 
-Early, but playable. One area that feels good to walk around in any weather at
-any hour, and a farming loop you can actually run from bare ground to a full
-inventory. Crafting, NPCs, dialogue, quests and saving are not built yet; see
-the roadmap in `docs/STATUS.md`.
+Early, but genuinely playable. Two connected areas, a farming loop you can run
+from bare ground to a full inventory, an axe and a pick that change the world
+permanently, and a thread of environmental storytelling that pays off if you
+follow it. Crafting, NPCs and quests are not built yet; see the roadmap in
+`docs/STATUS.md`.

@@ -11,7 +11,7 @@ import { TAU, type Rect, rectsOverlap } from '../core/math.ts';
 import { chance, hash2, makeRng, noise2, randRange, type Rng } from '../core/rng.ts';
 import { drawSheared, type Sprite } from '../art/pixel.ts';
 import { buildFarmhouse, type Building } from '../art/building.ts';
-import type { AreaData } from '../data/area.ts';
+import type { AreaData, AreaExit } from '../data/area.ts';
 import { bakeTerrain, type BakedTerrain } from '../render/terrain.ts';
 import { WaterSurface } from '../render/water.ts';
 import { drawShadow } from '../render/shadow.ts';
@@ -136,6 +136,7 @@ export class World {
         if (!chance(rng, density * 0.62)) continue;
         const x = (tx + 0.5 + (rng() - 0.5) * 0.9) * TILE;
         const y = (ty + 0.5 + (rng() - 0.5) * 0.9) * TILE;
+        if (this.inExit(tx, ty, 1)) continue; // a gate has to be a gate
         const onPath = this.map.matAt(tx, ty) === Mat.Path;
         if (onPath) {
           // Where the track leaves the clearing, the way is grown over rather
@@ -190,7 +191,7 @@ export class World {
           this.map.matAt(tx, ty - 1) === Mat.Water ||
           this.map.matAt(tx, ty + 1) === Mat.Water;
         if (!touchesWater) continue;
-        if (this.isKeptClear(tx, ty)) continue;
+        if (this.isKeptClear(tx, ty) || this.inExit(tx, ty, 1)) continue;
         const clump = noise2(tx * 0.35, ty * 0.35, this.data.seed + 61);
         if (clump < 0.42) continue;
         const n = 1 + Math.floor(clump * 3);
@@ -212,7 +213,7 @@ export class World {
       for (let tx = 1; tx < this.map.w - 1; tx++) {
         const mat = this.map.matAt(tx, ty);
         if (mat === Mat.Water || mat === Mat.Stone || mat === Mat.Soil) continue;
-        if (this.isKeptClear(tx, ty)) continue;
+        if (this.isKeptClear(tx, ty) || this.inExit(tx, ty)) continue;
         const meadow = noise2(tx * 0.09, ty * 0.11, seed + 17);
         const bloom = noise2(tx * 0.14, ty * 0.13, seed + 29);
 
@@ -235,6 +236,24 @@ export class World {
         }
       }
     }
+  }
+
+  /** Is this tile inside an exit, optionally with a margin in tiles? */
+  private inExit(tx: number, ty: number, pad = 0): boolean {
+    for (const e of this.data.exits ?? []) {
+      if (tx >= e.x - pad && tx < e.x + e.w + pad && ty >= e.y - pad && ty < e.y + e.h + pad) return true;
+    }
+    return false;
+  }
+
+  /** The exit the player is standing in, if any. */
+  exitAt(x: number, y: number): AreaExit | null {
+    const tx = Math.floor(x / TILE);
+    const ty = Math.floor(y / TILE);
+    for (const e of this.data.exits ?? []) {
+      if (tx >= e.x && tx < e.x + e.w && ty >= e.y && ty < e.y + e.h) return e;
+    }
+    return null;
   }
 
   private isKeptClear(tx: number, ty: number): boolean {
@@ -262,6 +281,13 @@ export class World {
       for (let tx = 0; tx < this.map.w; tx++) {
         const edgeDist = Math.min(tx, ty, this.map.w - 1 - tx, this.map.h - 1 - ty);
         if (edgeDist < b) this.map.setSolid(tx, ty, true);
+      }
+    }
+    // Exits are cut back out of the border afterwards, so the order of these
+    // two loops is the difference between a gate and a wall.
+    for (const e of this.data.exits ?? []) {
+      for (let ty = e.y; ty < e.y + e.h; ty++) {
+        for (let tx = e.x; tx < e.x + e.w; tx++) this.map.setSolid(tx, ty, false);
       }
     }
     for (const t of this.data.walkable ?? []) this.map.setSolid(t.tx, t.ty, false);
@@ -614,6 +640,7 @@ export class World {
    * is skipped rather than fatal.
    */
   restoreChanges(list: readonly PropChange[]): void {
+    if (!Array.isArray(list)) return;
     let touched = false;
     for (const c of list) {
       if (typeof c.x !== 'number' || typeof c.y !== 'number') continue;

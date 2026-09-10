@@ -225,6 +225,10 @@ export class Farm {
   /** Replace all plot state, e.g. from a save file. */
   restore(saved: readonly PlotSave[]): void {
     this.plots.clear();
+    // Guarded because this is public API reached from a file on disk. The save
+    // reader already guarantees an array; a caller passing anything else should
+    // get an empty farm, not a thrown TypeError halfway through loading.
+    if (!Array.isArray(saved)) return;
     for (const s of saved) {
       if (!this.map.inBounds(s.tx, s.ty)) continue;
       this.plots.set(this.key(s.tx, s.ty), {

@@ -216,6 +216,7 @@ export class Pickups {
   /** Put saved drops back, settled and ready to be walked over. */
   restore(list: readonly { id: string; count: number; x: number; y: number }[]): void {
     this.clear();
+    if (!Array.isArray(list)) return;
     for (const s of list) {
       const d = this.free();
       if (!d) return;

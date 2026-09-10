@@ -66,6 +66,44 @@ export const INSPECT: Record<string, InspectEntry> = {
     'You have not lit these.',
   ],
 
+  // --- the meadow ---------------------------------------------------------
+
+  sign_meadow: [
+    'A newer board than the one at the crossroads, and somebody has kept it painted.',
+    'MEADOW. And underneath, smaller and in a different hand: MIND THE CROSSING.',
+  ],
+
+  stump_meadow: [
+    'Cut this spring, by the look of the face.',
+    'Nobody has lived out here for years. And this was cut this spring.',
+  ],
+
+  crate_ruin: [
+    'A crate, on a floor with no building on it. The lid is not nailed down.',
+    'Inside: a coil of rope, a chisel, and a bundle of iron brackets tied with wire.',
+    'You count the brackets twice, because the first time you did not believe it. Nine.',
+  ],
+
+  // The payoff of the set. It only lands if you have found the other two, so
+  // the text checks — and says something quite different if you have not.
+  bell_ruin: (seen) => {
+    const both = seen.has('bell_wood') && seen.has('bell_pond');
+    if (!both) {
+      return [
+        'A standing stone in the middle of a cut floor, and there are no walls anywhere.',
+        'This one still has its bell. Iron, the size of a fist, green with age.',
+        'It does not ring. You have tried twice now.',
+      ];
+    }
+    return [
+      'The third stone, in the middle of a floor with no walls.',
+      'This one still has its bell. Iron, the size of a fist, green with age.',
+      'It does not ring.',
+      'Three stones, and only this one still hung. Whoever took the others down started at the edges of the valley and worked inward — and they did not get this far.',
+      'Or they got this far, and stopped.',
+    ];
+  },
+
   stump_old: [
     'Cut clean, and a long time ago.',
     'You start counting rings out of habit and lose your place somewhere after sixty.',

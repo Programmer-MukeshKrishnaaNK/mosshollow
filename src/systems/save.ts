@@ -27,8 +27,10 @@ import type { Slot } from './inventory.ts';
 import type { Sky } from './weather.ts';
 import type { PropChange } from '../world/props.ts';
 
-export const SAVE_VERSION = 1;
-const KEY = 'mosshollow.save.v1';
+export const SAVE_VERSION = 2;
+const KEY = 'mosshollow.save';
+/** Where version 1 lived. Read once, migrated, and then left alone. */
+const LEGACY_KEY = 'mosshollow.save.v1';
 
 export interface SaveData {
   version: number;
@@ -38,8 +40,15 @@ export interface SaveData {
   clock: { minutes: number; day: number };
   weather: { sky: Sky; rain: number; overcast: number };
   inventory: { slots: Slot[]; selected: number };
+  /** State per area, keyed by area id. Areas never visited are simply absent. */
+  areas: Record<string, AreaSave>;
+  /** Inspect keys the player has read, so the world keeps noticing. */
+  seen: string[];
+}
+
+export interface AreaSave {
   farm: PlotSave[];
-  /** Only what the player changed — the two thousand generated props are not
+  /** Only what the player changed — the thousands of generated props are not
    *  in here, because the seed reproduces them exactly. */
   props: PropChange[];
   /** Items still lying on the ground. */
@@ -124,6 +133,7 @@ export function write(data: SaveData): boolean {
 export function clear(): void {
   try {
     localStorage.removeItem(KEY);
+    localStorage.removeItem(LEGACY_KEY);
   } catch {
     /* nothing to do */
   }
@@ -131,7 +141,7 @@ export function clear(): void {
 
 export function exists(): boolean {
   try {
-    return localStorage.getItem(KEY) !== null;
+    return localStorage.getItem(KEY) !== null || localStorage.getItem(LEGACY_KEY) !== null;
   } catch {
     return false;
   }
@@ -143,7 +153,7 @@ export function exists(): boolean {
 export function read(): SaveData | null {
   let raw: string | null = null;
   try {
-    raw = localStorage.getItem(KEY);
+    raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
   } catch {
     return null;
   }
@@ -195,10 +205,35 @@ export function read(): SaveData | null {
       selected: Math.max(0, Math.floor(num(inventory.selected, 0))),
       slots: readSlots(inventory.slots),
     },
-    farm: readPlots(root.farm),
-    props: readPropChanges(root.props),
-    drops: readDrops(root.drops),
+    areas: readAreas(root, version),
+    seen: arr(root.seen).filter((k): k is string => typeof k === 'string'),
   };
+}
+
+/**
+ * Version 1 kept a single flat farm and prop list, because there was only one
+ * place to be. Those belong to the homestead.
+ */
+function readAreas(root: Unknown, version: number): Record<string, AreaSave> {
+  const out: Record<string, AreaSave> = {};
+  if (version < 2) {
+    out.homestead = {
+      farm: readPlots(root.farm),
+      props: readPropChanges(root.props),
+      drops: readDrops(root.drops),
+    };
+    return out;
+  }
+  const areas = obj(root.areas);
+  for (const id of Object.keys(areas)) {
+    const a = obj(areas[id]);
+    out[id] = {
+      farm: readPlots(a.farm),
+      props: readPropChanges(a.props),
+      drops: readDrops(a.drops),
+    };
+  }
+  return out;
 }
 
 function readPropChanges(v: unknown): PropChange[] {

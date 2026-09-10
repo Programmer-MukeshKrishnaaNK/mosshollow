@@ -22,6 +22,25 @@ export interface FenceRun {
   y1: number;
 }
 
+/**
+ * A way out. The rectangle is a trigger in tile space; walking into it moves
+ * the player to `entryTx/entryTy` in the target area, facing `facing`.
+ *
+ * Exit tiles are also holes in the world: the forest that wraps an area is not
+ * planted on them and their tiles are left walkable, so a gate reads as a gate
+ * rather than as a hole you cannot use.
+ */
+export interface AreaExit {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  to: string;
+  entryTx: number;
+  entryTy: number;
+  facing: 'down' | 'up' | 'left' | 'right';
+}
+
 export interface AreaData {
   id: string;
   name: string;
@@ -34,6 +53,8 @@ export interface AreaData {
   house?: { tx: number; ty: number };
   props: readonly PropPlacement[];
   fences: readonly FenceRun[];
+  /** Ways out of this area. */
+  exits?: readonly AreaExit[];
   /** Tiles forced walkable after props are stamped — bridges, docks, gateways. */
   walkable?: readonly { tx: number; ty: number }[];
   /** Rectangles the automatic decoration scatter must leave alone, in tiles. */

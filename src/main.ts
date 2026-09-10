@@ -12,7 +12,8 @@ import './style.css';
 import { Input } from './core/input.ts';
 import { FIXED_DT, Loop } from './core/loop.ts';
 import { clamp } from './core/math.ts';
-import { HOMESTEAD } from './data/homestead.ts';
+import { AREAS, START_AREA, area as areaData } from './data/areas.ts';
+import type { AreaExit } from './data/area.ts';
 import { Pickups, type Drop } from './entities/pickup.ts';
 import { Player } from './entities/player.ts';
 import { Camera } from './render/camera.ts';
@@ -25,6 +26,7 @@ import { Farm, type Plot } from './systems/farm.ts';
 import { item, type ToolKind } from './data/items.ts';
 import type { Prop } from './world/props.ts';
 import { Inventory } from './systems/inventory.ts';
+import { Transition } from './systems/transition.ts';
 import { Dialogue } from './systems/dialogue.ts';
 import { resolveInspect } from './data/inspect.ts';
 import * as Save from './systems/save.ts';
@@ -55,13 +57,17 @@ class Game {
   /** Sampled a few times a second, not per frame — it only drives a volume. */
   private waterNearness = 0;
   private waterSampleTimer = 0;
-  private world: World;
+  /** Areas are built on first visit and kept; a bake is not cheap. */
+  private worlds = new Map<string, World>();
+  private farms = new Map<string, Farm>();
+  private dropPools = new Map<string, Pickups>();
+  private areaId = START_AREA;
+  private transition = new Transition();
   private player: Player;
   private camera: Camera;
   private hud = new Hud();
   private hotbar = new Hotbar();
   private toast = new Toast();
-  private pickups = new Pickups();
   /** The prop the current swing is aimed at, locked in when it starts. */
   private swingProp: Prop | null = null;
   /** What an axe or pick could work on right now. */
@@ -74,7 +80,6 @@ class Game {
   /** The title card hands control over exactly once. */
   private titleReleased = false;
   private inventory = new Inventory();
-  private farm: Farm;
   /** The tile the player is facing, and what acting on it would do. */
   private targetTx = 0;
   private targetTy = 0;
@@ -100,9 +105,7 @@ class Game {
   constructor(container: HTMLElement) {
     this.renderer = new Renderer(container);
     this.clouds = new CloudShadows(this.renderer.ctx);
-    this.world = new World(HOMESTEAD, this.renderer.ctx, VIEW_W + 1, VIEW_H + 1);
-
-    this.farm = new Farm(this.world.map);
+    this.enterAreaData(START_AREA);
 
     const spawn = this.world.spawn;
     this.player = new Player(spawn.x, spawn.y);
@@ -172,6 +175,9 @@ class Game {
         weather: () => ({ wind: this.weather.wind, rain: this.weather.rain, overcast: this.weather.overcast, sky: this.weather.sky }),
         farm: this.farm,
         pickups: () => this.pickups.liveCount,
+        areaId: () => this.areaId,
+        areas: () => [...this.worlds.keys()],
+        transition: () => ({ active: this.transition.active, phase: this.transition.phase, cover: +this.transition.cover.toFixed(2) }),
         props: () => this.world.props.filter((p) => !p.gone).length,
         harvestTarget: () => this.harvestTarget && { id: this.harvestTarget.def.id, hp: this.harvestTarget.hp, x: this.harvestTarget.x, y: this.harvestTarget.y },
         inventory: this.inventory,
@@ -228,6 +234,53 @@ class Game {
     this.audio.footstep(ground, this.player.running);
   }
 
+  get world(): World {
+    return this.worlds.get(this.areaId)!;
+  }
+
+  get farm(): Farm {
+    return this.farms.get(this.areaId)!;
+  }
+
+  get pickups(): Pickups {
+    return this.dropPools.get(this.areaId)!;
+  }
+
+  /** Build an area if this is the first time, and make it the current one. */
+  private enterAreaData(id: string): void {
+    if (!this.worlds.has(id)) {
+      const world = new World(areaData(id), this.renderer.ctx, VIEW_W + 1, VIEW_H + 1);
+      this.worlds.set(id, world);
+      this.farms.set(id, new Farm(world.map));
+      this.dropPools.set(id, new Pickups());
+    }
+    this.areaId = id;
+  }
+
+  /** Walk through a gate. */
+  private takeExit(exit: AreaExit): void {
+    if (!AREAS[exit.to]) return;
+    this.transition.begin(() => {
+      // Everything in here happens on a fully black screen, including the
+      // terrain bake the first time an area is visited.
+      this.enterAreaData(exit.to);
+      this.player.x = exit.entryTx * TILE;
+      this.player.y = exit.entryTy * TILE;
+      this.player.facing = exit.facing;
+      this.player.vx = 0;
+      this.player.vy = 0;
+      this.particles.clear();
+      this.camera.worldW = this.world.map.pixelW;
+      this.camera.worldH = this.world.map.pixelH;
+      this.camera.snapTo(this.player.x, this.player.focusY);
+      this.lastDay = this.clock.day;
+      this.toast.show(this.world.data.name, 2.2);
+      // Saved after arriving, not before: a save taken on the way out puts you
+      // back in the doorway you just used.
+      this.saveGame(false);
+    });
+  }
+
   /** Write the whole world state. `announce` shows the toast. */
   private saveGame(announce = true): void {
     const ok = Save.write({
@@ -238,9 +291,16 @@ class Game {
       clock: { minutes: this.clock.minutes, day: this.clock.day },
       weather: { sky: this.weather.sky, rain: this.weather.rain, overcast: this.weather.overcast },
       inventory: { slots: this.inventory.slots, selected: this.inventory.selected },
-      farm: Save.serializePlots(this.farm.all),
-      props: this.world.serializeChanges(),
-      drops: this.pickups.serialize(),
+      // Every area that has ever been built, not just the one you are standing
+      // in — walking away from a farm must not wipe it.
+      areas: Object.fromEntries(
+        [...this.worlds.keys()].map((id) => [id, {
+          farm: Save.serializePlots(this.farms.get(id)!.all),
+          props: this.worlds.get(id)!.serializeChanges(),
+          drops: this.dropPools.get(id)!.serialize(),
+        }]),
+      ),
+      seen: [...this.seen],
     });
     if (announce) this.toast.show(ok ? 'saved' : 'could not save');
   }
@@ -248,7 +308,15 @@ class Game {
   /** Restore a save if there is one. Never throws on a bad file. */
   private loadGame(): boolean {
     const data = Save.read();
-    if (!data || data.area !== this.world.data.id) return false;
+    if (!data) return false;
+    // Build whatever areas the save knows about before restoring into them,
+    // then stand in the one the player left off in.
+    for (const id of Object.keys(data.areas)) {
+      if (AREAS[id]) this.enterAreaData(id);
+    }
+    this.enterAreaData(AREAS[data.area] ? data.area : START_AREA);
+    this.camera.worldW = this.world.map.pixelW;
+    this.camera.worldH = this.world.map.pixelH;
     this.player.x = data.player.x;
     this.player.y = data.player.y;
     this.player.facing = data.player.facing;
@@ -260,9 +328,16 @@ class Game {
     if (data.inventory.slots.length) {
       this.inventory.restore(data.inventory.slots, data.inventory.selected);
     }
-    this.farm.restore(data.farm);
-    this.world.restoreChanges(data.props);
-    this.pickups.restore(data.drops);
+    for (const [id, a] of Object.entries(data.areas)) {
+      const farm = this.farms.get(id);
+      const world = this.worlds.get(id);
+      const drops = this.dropPools.get(id);
+      if (!farm || !world || !drops) continue; // an area this build no longer has
+      farm.restore(a.farm);
+      world.restoreChanges(a.props);
+      drops.restore(a.drops);
+    }
+    this.seen = new Set(data.seen);
     this.camera.snapTo(this.player.x, this.player.focusY);
     return true;
   }
@@ -627,7 +702,33 @@ class Game {
       return;
     }
 
+    // The transition owns the player while it runs; nothing else reads input.
+    this.transition.update(dt);
+    if (this.transition.active) {
+      this.player.frozen = true;
+      this.player.update(dt, this.input, this.world.blocked, this.time);
+      this.camera.follow(this.player.x, this.player.focusY, 0, 0, dt);
+      this.hotbar.update(dt, this.inventory);
+      this.toast.update(dt);
+      this.playerDrawable.sortY = this.player.y;
+      this.playerDrawable.shadowX = this.player.x;
+      this.playerDrawable.shadowY = this.player.y;
+      this.input.endFrame();
+      return;
+    }
+    if (this.titleReleased) this.player.frozen = false;
+
     this.player.update(dt, this.input, this.world.blocked, this.time);
+
+    // Walking into a gate takes it. No key press: a gate you have to confirm
+    // is a door, and this is a gap in a hedge.
+    const exit = this.world.exitAt(this.player.x, this.player.y - 3);
+    if (exit) {
+      this.takeExit(exit);
+      this.input.endFrame();
+      return;
+    }
+
     this.updateTarget();
     this.handleHotbar();
     if (this.input.wasPressed('interact') && !this.player.swinging && !this.player.frozen) {
@@ -738,6 +839,12 @@ class Game {
     this.hotbar.draw(uctx, this.inventory, VIEW_W, VIEW_H, this.time);
     this.toast.draw(uctx, VIEW_W, VIEW_H);
     drawDialogue(uctx, this.dialogue, VIEW_W, VIEW_H, this.time);
+    if (this.transition.cover > 0.001) {
+      uctx.globalAlpha = this.transition.cover;
+      uctx.fillStyle = '#0d0b11';
+      uctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      uctx.globalAlpha = 1;
+    }
     this.title.draw(uctx, VIEW_W, VIEW_H);
     this.debug.drawUi(uctx, this.loop, this.player, world, clock, this.weather, this.particles);
 
