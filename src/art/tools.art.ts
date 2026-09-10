@@ -191,3 +191,151 @@ export const ICON_WHEAT: PixelMap = [
   '..............',
   '..............',
 ];
+
+/** Axe, wound back. The head is a wedge, wider at the cutting edge. */
+export const AXE_UP: PixelMap = [
+  '.......kkkk...',
+  '......kGGGGk..',
+  '......kGVVGk..',
+  '.......kGGk...',
+  '......kxzk....',
+  '......kxz.....',
+  '.....kxz......',
+  '.....kxz......',
+  '....kxz.......',
+  '....kxz.......',
+  '...kxz........',
+  '...kxz........',
+  '..kxz.........',
+  '..kxk.........',
+  '..kk..........',
+  '..............',
+];
+
+/** Axe, buried in the trunk. */
+export const AXE_DOWN: PixelMap = [
+  '..........kk..',
+  '.........kxk..',
+  '.........kxz..',
+  '........kxz...',
+  '........kxz...',
+  '.......kxz....',
+  '.......kxz....',
+  '......kxz.....',
+  '......kxz.....',
+  '.....kxz......',
+  '.....kxzk.....',
+  '....kGVGk.....',
+  '...kGVVGk.....',
+  '...kGVVGk.....',
+  '....kGGk......',
+  '.....kk.......',
+];
+
+/** Pick, wound back. The head is a bar, tapered to points at both ends. */
+export const PICK_UP: PixelMap = [
+  '...kkkkkkkk...',
+  '..kGVVVVVVGk..',
+  '...kkkGGkkk...',
+  '......kzk.....',
+  '......kxz.....',
+  '.....kxz......',
+  '.....kxz......',
+  '....kxz.......',
+  '....kxz.......',
+  '...kxz........',
+  '...kxz........',
+  '..kxz.........',
+  '..kxz.........',
+  '..kxk.........',
+  '..kk..........',
+  '..............',
+];
+
+/** Pick, in the stone. */
+export const PICK_DOWN: PixelMap = [
+  '..........kk..',
+  '.........kxk..',
+  '.........kxz..',
+  '........kxz...',
+  '........kxz...',
+  '.......kxz....',
+  '.......kxz....',
+  '......kxz.....',
+  '......kxz.....',
+  '.....kxz......',
+  '.....kzk......',
+  '..kkkGGkkk....',
+  '.kGVVVVVVGk...',
+  '..kkkkkkkk....',
+  '..............',
+  '..............',
+];
+
+export const ICON_AXE: PixelMap = [
+  '..............',
+  '........kkkk..',
+  '.......kGGGGk.',
+  '.......kGVVGk.',
+  '........kGGk..',
+  '.......kxzk...',
+  '......kxz.....',
+  '.....kxz......',
+  '....kxz.......',
+  '...kxz........',
+  '...kxk........',
+  '...kk.........',
+  '..............',
+  '..............',
+];
+
+export const ICON_PICK: PixelMap = [
+  '..............',
+  '..kkkkkkkk....',
+  '.kGVVVVVVGk...',
+  '..kkkGGkkk....',
+  '.....kzk......',
+  '.....kxz......',
+  '....kxz.......',
+  '....kxz.......',
+  '...kxz........',
+  '...kxz........',
+  '...kxk........',
+  '...kk.........',
+  '..............',
+  '..............',
+];
+
+export const ICON_WOOD: PixelMap = [
+  '..............',
+  '...kkkkkk.....',
+  '..kzxxxxzk....',
+  '.kzwqqwxxzk...',
+  '.kxwqewqxxk...',
+  '.kzwqqwxxzk...',
+  '..kxxxxxxk....',
+  '..kkkkkkkk....',
+  '...kzxxzk.....',
+  '..kzwqqwzk....',
+  '..kxwqewxk....',
+  '..kzxxxxzk....',
+  '...kkkkkk.....',
+  '..............',
+];
+
+export const ICON_STONE: PixelMap = [
+  '..............',
+  '.....kkkk.....',
+  '....kassak....',
+  '...kasssdak...',
+  '..kassdddsak..',
+  '..kasdddddak..',
+  '..kfsddddfak..',
+  '...kffddffk...',
+  '....kkffkk....',
+  '...kask.......',
+  '..kassdk......',
+  '..kfsddk......',
+  '...kffk.......',
+  '....kk........',
+];

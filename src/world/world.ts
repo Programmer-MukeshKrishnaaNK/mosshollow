@@ -20,7 +20,7 @@ import { FX, type Particles } from '../systems/particles.ts';
 import type { TimeOfDay } from '../systems/time.ts';
 import type { Weather } from '../systems/weather.ts';
 import { Mat, TILE } from './materials.ts';
-import { buildProps, type Prop, type PropDef } from './props.ts';
+import { buildProps, type Prop, type PropChange, type PropDef } from './props.ts';
 import { Tilemap } from './tilemap.ts';
 
 /** Anything drawn in the depth-sorted pass. */
@@ -40,14 +40,26 @@ export class World {
   readonly house: Building | null = null;
   housePos = { x: 0, y: 0 };
 
-  /** Static blocking rectangles from props and the house. */
-  private colliders: Rect[] = [];
+  /**
+   * Blocking rectangles, each remembering the prop it belongs to so that
+   * felling a tree actually opens the ground it was standing on.
+   */
+  private colliders: Collider[] = [];
   /** Coarse spatial buckets so collision never scans the whole list. */
-  private buckets = new Map<number, Rect[]>();
+  private buckets = new Map<number, Collider[]>();
   private static readonly BUCKET = 64;
 
   /** Props that shed leaves, cached so the ambient pass need not filter. */
   private shedders: Prop[] = [];
+  /** Props currently ringing from a blow, so the update is not a full scan. */
+  private struck: Prop[] = [];
+  /**
+   * Everything the player has done to the props, keyed by the position it
+   * happened at. Saving mutations rather than the whole prop list means the
+   * two thousand trees the seed generates never touch the save file, and a
+   * change to the world's layout does not invalidate anyone's game.
+   */
+  private changes = new Map<string, PropChange>();
   private ambientTimer = 0;
   private smokeTimer = 0;
   time = 0;
@@ -135,6 +147,10 @@ export class World {
         }
         const kind = chance(rng, 0.74) ? oaks : birches;
         this.add(kind[Math.floor(rng() * kind.length)], x, y, rng);
+        // The tiles under the border stay solid whatever happens to the trees
+        // on them, so felling one would leave a gap you still could not walk
+        // through. Better that the deep woods simply do not yield.
+        this.props[this.props.length - 1].guarded = true;
         if (edgeDist >= b - 1 && chance(rng, 0.34)) {
           this.add(`bush${Math.floor(rng() * 3)}`, x + randRange(rng, -10, 10), y + randRange(rng, 6, 14), rng);
         }
@@ -232,16 +248,12 @@ export class World {
   // --- collision ------------------------------------------------------------
 
   private buildColliders(): void {
-    for (const p of this.props) {
-      const c = p.def.collider;
-      if (!c) continue;
-      this.pushCollider({ x: p.x + c.dx, y: p.y + c.dy, w: c.w, h: c.h });
-    }
+    for (const p of this.props) this.addPropCollider(p);
     if (this.house && this.data.house) {
       const s = this.house.solid;
       const ox = this.housePos.x - this.house.sprite.ox;
       const oy = this.housePos.y - this.house.sprite.oy;
-      this.pushCollider({ x: ox + s.x, y: oy + s.y, w: s.w, h: s.h });
+      this.pushCollider({ rect: { x: ox + s.x, y: oy + s.y, w: s.w, h: s.h } });
     }
     // The forest border is solid regardless of where individual trunks landed,
     // so there is no gap to squeeze through.
@@ -255,8 +267,15 @@ export class World {
     for (const t of this.data.walkable ?? []) this.map.setSolid(t.tx, t.ty, false);
   }
 
-  private pushCollider(r: Rect): void {
-    this.colliders.push(r);
+  private addPropCollider(p: Prop): void {
+    const c = p.def.collider;
+    if (!c) return;
+    this.pushCollider({ rect: { x: p.x + c.dx, y: p.y + c.dy, w: c.w, h: c.h }, prop: p });
+  }
+
+  private pushCollider(entry: Collider): void {
+    this.colliders.push(entry);
+    const r = entry.rect;
     const b = World.BUCKET;
     const x0 = Math.floor(r.x / b);
     const x1 = Math.floor((r.x + r.w) / b);
@@ -270,7 +289,7 @@ export class World {
           list = [];
           this.buckets.set(key, list);
         }
-        list.push(r);
+        list.push(entry);
       }
     }
   }
@@ -296,7 +315,10 @@ export class World {
       for (let bx = bx0; bx <= bx1; bx++) {
         const list = this.buckets.get(by * 4096 + bx);
         if (!list) continue;
-        for (const c of list) if (rectsOverlap(r, c)) return true;
+        for (const c of list) {
+          if (c.prop?.gone) continue;
+          if (rectsOverlap(r, c.rect)) return true;
+        }
       }
     }
     return false;
@@ -307,6 +329,11 @@ export class World {
   update(dt: number, time: number, weather: Weather, clock: TimeOfDay, particles: Particles, camX: number, camY: number, viewW: number, viewH: number): void {
     this.time = time;
     particles.windX = weather.driftX;
+
+    for (const p of this.struck) {
+      p.shake = Math.max(0, (p.shake ?? 0) - dt * 9);
+    }
+    if (this.struck.length) this.struck = this.struck.filter((p) => (p.shake ?? 0) > 0);
 
     // Chimney smoke, but only while somebody would have a fire lit.
     if (this.house) {
@@ -428,6 +455,7 @@ export class World {
     // Shadows go down first, all of them, so no shadow ever lands on top of a
     // sprite that should be standing in front of it.
     for (const p of this.props) {
+      if (p.gone) continue;
       if (p.y < top || p.y > bottom || p.x < left || p.x > right) continue;
       const foot = p.def.collider;
       if (!foot || p.def.sortBias === -400) continue;
@@ -448,6 +476,7 @@ export class World {
     // Build the frame's draw list: visible props, the house, and the extras.
     const list: { sortY: number; prop?: Prop; extra?: Drawable; house?: boolean }[] = [];
     for (const p of this.props) {
+      if (p.gone) continue;
       if (p.y < top || p.y > bottom || p.x < left || p.x > right) continue;
       list.push({ sortY: p.y + (p.def.sortBias ?? 0), prop: p });
     }
@@ -486,10 +515,13 @@ export class World {
 
   private drawProp(ctx: CanvasRenderingContext2D, p: Prop, camX: number, camY: number, weather: Weather): void {
     const wind = weather.wind * p.swayScale;
+    // A struck prop rings: a fast decaying oscillation, strongest at the top,
+    // which is what makes an axe blow land on something rather than near it.
+    const jolt = p.shake ? Math.sin(this.time * 46) * p.shake * (p.shakeDir ?? 1) : 0;
     for (const layer of p.def.layers) {
       const dx = Math.round(p.x - camX + layer.dx);
       const dy = Math.round(p.y - camY + layer.dy);
-      if (layer.sway <= 0) {
+      if (layer.sway <= 0 && jolt === 0) {
         ctx.drawImage(layer.sprite.canvas, dx, dy);
         continue;
       }
@@ -500,9 +532,146 @@ export class World {
       const bias = layer.swayBias ?? 1.6;
       drawSheared(ctx, layer.sprite, dx, dy, (t) => {
         const s = Math.sin(this.time * 1.5 + p.phase + travel) * 0.62 + Math.sin(this.time * 3.7 + p.phase * 1.9) * 0.38;
-        return s * amp * Math.pow(t, bias);
+        return s * amp * Math.pow(t, bias) + jolt * Math.pow(t, 1.3);
       });
     }
+  }
+
+  /**
+   * The nearest thing a tool could be used on, within reach of a point.
+   * Guarded scenery and already-felled props are invisible to this.
+   */
+  harvestableAt(x: number, y: number, radius = 17): Prop | null {
+    let best: Prop | null = null;
+    let bestD = radius * radius;
+    for (const p of this.props) {
+      if (!p.def.harvest || p.guarded || p.gone) continue;
+      const dx = p.x - x;
+      const dy = p.y - 3 - y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Land a blow. Returns what came loose, and whether that was the last one.
+   * The prop is mutated in place; the caller handles the effects.
+   */
+  strikeProp(prop: Prop, roll: () => number): { destroyed: boolean; drops: { item: string; count: number }[] } | null {
+    const h = prop.def.harvest;
+    if (!h || prop.gone || prop.guarded) return null;
+    if (prop.hp === undefined) prop.hp = h.hp;
+    prop.hp--;
+    // Every blow knocks the thing sideways, away from the swing.
+    prop.shake = 2.4;
+    prop.shakeDir = roll() > 0.5 ? 1 : -1;
+    if (!this.struck.includes(prop)) this.struck.push(prop);
+
+    if (prop.hp > 0) {
+      this.recordChange(prop, { hp: prop.hp });
+      return { destroyed: false, drops: [] };
+    }
+
+    const drops = h.drops.map((d) => ({
+      item: d.item,
+      count: d.min + Math.floor(roll() * (d.max - d.min + 1)),
+    }));
+    // Clearing hp matters: what stands here now is a different prop with its
+    // own durability. Carrying the felled tree's last hit point over would
+    // leave the stump one blow from gone on every reload.
+    if (h.becomes) {
+      this.replaceProp(prop, h.becomes);
+      this.recordChange(prop, { to: h.becomes, hp: undefined });
+    } else {
+      this.retireProp(prop);
+      this.recordChange(prop, { to: null, hp: undefined });
+    }
+    return { destroyed: true, drops };
+  }
+
+  private static posKey(x: number, y: number): string {
+    return `${x.toFixed(2)}:${y.toFixed(2)}`;
+  }
+
+  private recordChange(prop: Prop, patch: Partial<PropChange>): void {
+    const key = World.posKey(prop.x, prop.y);
+    const existing = this.changes.get(key) ?? { x: prop.x, y: prop.y };
+    this.changes.set(key, { ...existing, ...patch });
+  }
+
+  /** Everything the player has changed about the props, for the save file. */
+  serializeChanges(): PropChange[] {
+    return [...this.changes.values()];
+  }
+
+  /**
+   * Re-apply saved changes to a freshly generated world. Anything that no
+   * longer matches — a prop the layout moved, a definition that was renamed —
+   * is skipped rather than fatal.
+   */
+  restoreChanges(list: readonly PropChange[]): void {
+    let touched = false;
+    for (const c of list) {
+      if (typeof c.x !== 'number' || typeof c.y !== 'number') continue;
+      const key = World.posKey(c.x, c.y);
+      const prop = this.props.find((p) => !p.gone && World.posKey(p.x, p.y) === key);
+      if (!prop) continue;
+      this.changes.set(key, c);
+      if (c.to !== undefined) {
+        if (c.to === null) {
+          this.retireProp(prop);
+        } else if (this.defs[c.to]) {
+          this.retireProp(prop);
+          this.props.push({
+            def: this.defs[c.to], x: prop.x, y: prop.y,
+            phase: prop.phase, swayScale: prop.swayScale,
+            hp: c.hp,
+          });
+          touched = true;
+        }
+      } else if (typeof c.hp === 'number') {
+        prop.hp = c.hp;
+      }
+    }
+    if (touched) {
+      this.props.sort((a, b) => (a.y + (a.def.sortBias ?? 0)) - (b.y + (b.def.sortBias ?? 0)));
+    }
+    // Colliders and shedders are derived state; rebuild them from scratch
+    // rather than trying to patch them in place.
+    this.colliders.length = 0;
+    this.buckets.clear();
+    this.buildColliders();
+    this.shedders = this.props.filter((p) => p.def.sheds && !p.gone);
+  }
+
+  /** Swap a prop for another definition in place — a tree for its stump. */
+  private replaceProp(prop: Prop, defId: string): void {
+    const def = this.defs[defId];
+    if (!def) throw new Error(`No prop definition "${defId}"`);
+    this.retireProp(prop);
+    const replacement: Prop = {
+      def,
+      x: prop.x,
+      y: prop.y,
+      phase: prop.phase,
+      swayScale: prop.swayScale,
+    };
+    this.props.push(replacement);
+    // Static props are sorted once at construction; felling one is rare enough
+    // that re-sorting beats maintaining an insertion index.
+    this.props.sort((a, b) => (a.y + (a.def.sortBias ?? 0)) - (b.y + (b.def.sortBias ?? 0)));
+    this.addPropCollider(replacement);
+    this.shedders = this.props.filter((p) => p.def.sheds && !p.gone);
+  }
+
+  /** Take a prop out of the world without disturbing the arrays. */
+  private retireProp(prop: Prop): void {
+    prop.gone = true;
+    this.shedders = this.shedders.filter((p) => p !== prop);
   }
 
   /**
@@ -515,7 +684,7 @@ export class World {
     let best: Prop | null = null;
     let bestD = radius * radius;
     for (const p of this.props) {
-      if (!p.inspect) continue;
+      if (!p.inspect || p.gone) continue;
       const dx = p.x - x;
       const dy = (p.y - 4) - y;
       const d = dx * dx + dy * dy;
@@ -567,6 +736,12 @@ export class World {
   get spawn(): { x: number; y: number } {
     return { x: this.data.spawn.tx * TILE, y: this.data.spawn.ty * TILE };
   }
+}
+
+/** A blocking rectangle and, for props, the thing that put it there. */
+interface Collider {
+  rect: Rect;
+  prop?: Prop;
 }
 
 export type { Sprite };

@@ -4,7 +4,7 @@ Updated: 2026-09-10
 
 ## Current build
 
-Phases 1 to 3 complete, plus persistence — the visual foundation, the
+Phases 1 to 3 complete, persistence, and the first half of Phase 4 — the visual foundation, the
 atmosphere over it, a farming loop you can run start to finish, and a save that
 survives being handed a file it was not expecting.
 
@@ -40,6 +40,12 @@ survives being handed a file it was not expecting.
   anchored per facing and per phase, mirrored so it swings one-handed
 - Inventory and hotbar with six slots, stacking, and item flavour lines
 - HUD: almanac card with day, clock and sun/moon dial; title card
+- Gathering: axe and pick, trees that fell into stumps and stumps that can be
+  grubbed out, rocks that break and free the ground under them, guarded border
+  woods that do not yield
+- Dropped items: pop out with an arc and a bounce, settle where you can see
+  them land, then home in and accelerate; a full inventory leaves them lying
+  there rather than deleting them
 - Dialogue: queued lines with a typewriter reveal, punctuation that holds a
   beat, mid-reveal completion, page counter, and a box that takes the keyboard
   while it is open
@@ -49,7 +55,9 @@ survives being handed a file it was not expecting.
 - Save/load: autosaves each morning and on tab hide, restores player, clock,
   weather, inventory and every worked plot. Every field is optional on the way
   in and content ids are validated against the data, so an old, a newer or a
-  corrupted file degrades rather than crashes
+  corrupted file degrades rather than crashes. Prop changes are saved as
+  mutations keyed by position, so the two thousand generated props never touch
+  the file and a layout change does not invalidate anyone's game
 - Debug overlay, art sheet (5 pages incl. an animation filmstrip), deterministic
   dev stepper with pause/resume
 
@@ -95,13 +103,12 @@ mid-reveal completes the line rather than skipping it. No runtime errors.
 
 ## Next task
 
-Phase 4 — exploration: an axe and a pick, trees and rocks that give wood and
-stone, and a second area worth spending them to get into. The tool swing,
-particles and inventory are all in place, so a new tool is a definition plus a
-sprite rather than a system.
+Phase 4b — a second area. The meadow east of the gate: area registry, a
+transition that fades and swaps worlds, per-area farm and prop state in the
+save, and something over there worth the walk.
 
-Before that lands, `?fresh` needs a real counterpart in the UI — right now
-starting over means knowing about a URL parameter, and the first autosave then
+After that, `?fresh` needs a real counterpart in the UI — right now starting
+over means knowing about a URL parameter, and the first autosave then
 overwrites the old file.
 
 ## Deferred, on purpose
@@ -153,6 +160,15 @@ not belong in this game); procedural cave levels (scope).
   a hoe, because the grass in front of it was tillable.
 - **The look hint appears exactly when the key would read.** A hint that lies
   about what a button does is worse than no hint.
+- **Prop changes are saved as mutations, not as a prop list.** Two thousand
+  props are reproduced exactly by the seed; only the handful the player touched
+  need storing, keyed by position rather than index because the array changes
+  shape when a tree becomes a stump.
+- **A transformed prop's damage is cleared, not inherited.** The stump is a
+  different thing with its own durability — carrying the felled tree's last hit
+  point over left it one blow from gone on every reload.
+- **The border woods are scenery.** Their tiles stay solid regardless, so
+  felling one would leave a visible gap you still could not walk through.
 - **A version newer than this build is refused outright.** Reading it would
   silently discard whatever it knows that this build does not, and then write
   the loss back on the next autosave.

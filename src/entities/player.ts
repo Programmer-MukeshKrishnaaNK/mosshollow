@@ -19,9 +19,11 @@ import { mirrored, sprite, type Sprite } from '../art/pixel.ts';
 import {
   DOWN_RAISE, DOWN_STRIKE, SIDE_RAISE, SIDE_STRIKE, UP_RAISE, UP_STRIKE,
 } from '../art/playerTool.art.ts';
-import { CAN_POUR, CAN_UP, HOE_DOWN, HOE_UP } from '../art/tools.art.ts';
+import {
+  AXE_DOWN, AXE_UP, CAN_POUR, CAN_UP, HOE_DOWN, HOE_UP, PICK_DOWN, PICK_UP,
+} from '../art/tools.art.ts';
 import type { ToolKind } from '../data/items.ts';
-import { CAN_ANCHORS, HOE_ANCHORS, TOOL_TIMING, type FacingAnchors } from './toolPose.ts';
+import { CAN_ANCHORS, SWING_ANCHORS, TOOL_TIMING, type FacingAnchors } from './toolPose.ts';
 import {
   DOWN_PASS, DOWN_STEP_A, DOWN_STEP_B,
   SIDE_PASS, SIDE_STEP_A, SIDE_STEP_B,
@@ -112,13 +114,16 @@ export class Player {
       left: { raise: mirrored(sideRaise), strike: mirrored(sideStrike) },
     };
 
-    const hoeUp = sprite(HOE_UP);
-    const hoeDown = sprite(HOE_DOWN);
-    const canUp = sprite(CAN_UP);
-    const canPour = sprite(CAN_POUR);
+    const pair = (up: typeof HOE_UP, down: typeof HOE_DOWN) => {
+      const raise = sprite(up);
+      const strike = sprite(down);
+      return { raise, strike, raiseFlip: mirrored(raise), strikeFlip: mirrored(strike) };
+    };
     this.toolArt = {
-      hoe: { raise: hoeUp, strike: hoeDown, raiseFlip: mirrored(hoeUp), strikeFlip: mirrored(hoeDown) },
-      can: { raise: canUp, strike: canPour, raiseFlip: mirrored(canUp), strikeFlip: mirrored(canPour) },
+      hoe: pair(HOE_UP, HOE_DOWN),
+      axe: pair(AXE_UP, AXE_DOWN),
+      pick: pair(PICK_UP, PICK_DOWN),
+      can: pair(CAN_UP, CAN_POUR),
     };
 
     this.anim = new Animator(CLIPS, 'idle');
@@ -302,7 +307,7 @@ export class Player {
 
   private drawSwing(ctx: CanvasRenderingContext2D, camX: number, camY: number, tool: ToolKind): void {
     const pose = this.poses[this.facing];
-    const anchors: FacingAnchors = (tool === 'hoe' ? HOE_ANCHORS : CAN_ANCHORS)[this.facing];
+    const anchors: FacingAnchors = (tool === 'can' ? CAN_ANCHORS : SWING_ANCHORS[tool])[this.facing];
     const art = this.toolArt[tool];
     const t = this.phaseProgress();
 

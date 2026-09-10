@@ -25,6 +25,7 @@ import type { Facing } from '../entities/player.ts';
 import type { Plot } from './farm.ts';
 import type { Slot } from './inventory.ts';
 import type { Sky } from './weather.ts';
+import type { PropChange } from '../world/props.ts';
 
 export const SAVE_VERSION = 1;
 const KEY = 'mosshollow.save.v1';
@@ -38,6 +39,18 @@ export interface SaveData {
   weather: { sky: Sky; rain: number; overcast: number };
   inventory: { slots: Slot[]; selected: number };
   farm: PlotSave[];
+  /** Only what the player changed — the two thousand generated props are not
+   *  in here, because the seed reproduces them exactly. */
+  props: PropChange[];
+  /** Items still lying on the ground. */
+  drops: DropSave[];
+}
+
+export interface DropSave {
+  id: string;
+  count: number;
+  x: number;
+  y: number;
 }
 
 export interface PlotSave {
@@ -183,7 +196,44 @@ export function read(): SaveData | null {
       slots: readSlots(inventory.slots),
     },
     farm: readPlots(root.farm),
+    props: readPropChanges(root.props),
+    drops: readDrops(root.drops),
   };
+}
+
+function readPropChanges(v: unknown): PropChange[] {
+  const out: PropChange[] = [];
+  for (const entry of arr(v)) {
+    const c = obj(entry);
+    const x = num(c.x, NaN);
+    const y = num(c.y, NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const change: PropChange = { x, y };
+    // `to` distinguishes three states: absent (damaged only), null (removed),
+    // and a string (became something else). Only those three are accepted.
+    if (c.to === null) change.to = null;
+    else if (typeof c.to === 'string') change.to = c.to;
+    if (typeof c.hp === 'number' && Number.isFinite(c.hp)) {
+      change.hp = Math.max(0, Math.floor(c.hp));
+    }
+    out.push(change);
+  }
+  return out;
+}
+
+function readDrops(v: unknown): DropSave[] {
+  const out: DropSave[] = [];
+  for (const entry of arr(v)) {
+    const d = obj(entry);
+    const id = typeof d.id === 'string' && d.id in ITEMS ? d.id : null;
+    if (!id) continue; // an item this build no longer has; leave it behind
+    const count = Math.max(1, Math.floor(num(d.count, 1)));
+    const x = num(d.x, NaN);
+    const y = num(d.y, NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    out.push({ id, count, x, y });
+  }
+  return out;
 }
 
 function readSlots(v: unknown): Slot[] {

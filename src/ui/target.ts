@@ -11,7 +11,7 @@
 import { PALETTE } from '../art/palette.ts';
 import { TILE } from '../world/materials.ts';
 
-export type TargetKind = 'till' | 'water' | 'plant' | 'harvest' | 'clear' | null;
+export type TargetKind = 'till' | 'water' | 'plant' | 'harvest' | 'clear' | 'chop' | 'mine' | null;
 
 const COLOR: Record<Exclude<TargetKind, null>, string> = {
   till: PALETTE.cream0,
@@ -19,6 +19,8 @@ const COLOR: Record<Exclude<TargetKind, null>, string> = {
   plant: PALETTE.fol1,
   harvest: PALETTE.gold,
   clear: PALETTE.stone1,
+  chop: PALETTE.wood0,
+  mine: PALETTE.stone0,
 };
 
 /**

@@ -13,6 +13,7 @@ import { Input } from './core/input.ts';
 import { FIXED_DT, Loop } from './core/loop.ts';
 import { clamp } from './core/math.ts';
 import { HOMESTEAD } from './data/homestead.ts';
+import { Pickups, type Drop } from './entities/pickup.ts';
 import { Player } from './entities/player.ts';
 import { Camera } from './render/camera.ts';
 import { CloudShadows } from './render/clouds.ts';
@@ -21,6 +22,8 @@ import { Lighting, type Light } from './render/lighting.ts';
 import { Renderer, VIEW_H, VIEW_W } from './render/renderer.ts';
 import { GameAudio, type Ground } from './systems/audio.ts';
 import { Farm, type Plot } from './systems/farm.ts';
+import { item, type ToolKind } from './data/items.ts';
+import type { Prop } from './world/props.ts';
 import { Inventory } from './systems/inventory.ts';
 import { Dialogue } from './systems/dialogue.ts';
 import { resolveInspect } from './data/inspect.ts';
@@ -58,6 +61,11 @@ class Game {
   private hud = new Hud();
   private hotbar = new Hotbar();
   private toast = new Toast();
+  private pickups = new Pickups();
+  /** The prop the current swing is aimed at, locked in when it starts. */
+  private swingProp: Prop | null = null;
+  /** What an axe or pick could work on right now. */
+  private harvestTarget: Prop | null = null;
   private dialogue = new Dialogue();
   /** Inspect keys the player has read, so the world can notice. */
   private seen = new Set<string>();
@@ -79,6 +87,9 @@ class Game {
    * without allocating a closure per plant per frame.
    */
   private cropDraws: CropDraw[] = [];
+  private pickupDraws: PickupDraw[] = [];
+  /** The frame's sun direction, shared with anything that casts a shadow. */
+  private sun = { dx: 0, dy: 1, alpha: 0.3 };
   private title = new TitleCard();
   private debug = new DebugOverlay();
   private loop: Loop;
@@ -103,6 +114,8 @@ class Game {
     // What was left in the shed, and what somebody bothered to label.
     this.inventory.add('hoe', 1);
     this.inventory.add('can', 1);
+    this.inventory.add('axe', 1);
+    this.inventory.add('pick', 1);
     this.inventory.add('seed_bellroot', 12);
     this.inventory.add('seed_emberwheat', 12);
 
@@ -158,6 +171,9 @@ class Game {
         setSky: (sky: 'clear' | 'gathering' | 'rain' | 'clearing', hold = 600) => this.weather.setSky(sky, hold),
         weather: () => ({ wind: this.weather.wind, rain: this.weather.rain, overcast: this.weather.overcast, sky: this.weather.sky }),
         farm: this.farm,
+        pickups: () => this.pickups.liveCount,
+        props: () => this.world.props.filter((p) => !p.gone).length,
+        harvestTarget: () => this.harvestTarget && { id: this.harvestTarget.def.id, hp: this.harvestTarget.hp, x: this.harvestTarget.x, y: this.harvestTarget.y },
         inventory: this.inventory,
         target: () => ({ tx: this.targetTx, ty: this.targetTy, kind: this.targetKind }),
         select: (i: number) => this.inventory.select(i),
@@ -223,6 +239,8 @@ class Game {
       weather: { sky: this.weather.sky, rain: this.weather.rain, overcast: this.weather.overcast },
       inventory: { slots: this.inventory.slots, selected: this.inventory.selected },
       farm: Save.serializePlots(this.farm.all),
+      props: this.world.serializeChanges(),
+      drops: this.pickups.serialize(),
     });
     if (announce) this.toast.show(ok ? 'saved' : 'could not save');
   }
@@ -243,6 +261,8 @@ class Game {
       this.inventory.restore(data.inventory.slots, data.inventory.selected);
     }
     this.farm.restore(data.farm);
+    this.world.restoreChanges(data.props);
+    this.pickups.restore(data.drops);
     this.camera.snapTo(this.player.x, this.player.focusY);
     return true;
   }
@@ -252,7 +272,17 @@ class Game {
     const p = this.player.interactPoint();
     this.targetTx = Math.floor(p.x / TILE);
     this.targetTy = Math.floor(p.y / TILE);
-    this.targetKind = this.actionAt(this.targetTx, this.targetTy);
+    // A swung tool aims at a *thing*, not at a square of ground, so the
+    // harvest target is resolved first and wins if it finds anything.
+    this.harvestTarget = null;
+    const held = this.inventory.selectedItem;
+    if (held?.tool === 'axe' || held?.tool === 'pick') {
+      const prop = this.world.harvestableAt(p.x, p.y);
+      if (prop?.def.harvest?.tool === held.tool) this.harvestTarget = prop;
+    }
+    this.targetKind = this.harvestTarget
+      ? (held?.tool === 'axe' ? 'chop' : 'mine')
+      : this.actionAt(this.targetTx, this.targetTy);
     this.lookTarget = this.findLookTarget(p.x, p.y);
   }
 
@@ -312,6 +342,11 @@ class Game {
     const ty = this.targetTy;
 
     switch (kind) {
+      case 'chop':
+      case 'mine':
+        this.swingProp = this.harvestTarget;
+        this.player.useTool(kind === 'chop' ? 'axe' : 'pick');
+        break;
       case 'till':
         this.player.useTool('hoe');
         break;
@@ -339,26 +374,29 @@ class Game {
       case 'harvest': {
         const result = this.farm.harvest(tx, ty, Math.random());
         if (!result) return;
-        const left = this.inventory.add(result.item, result.count, this.time);
         this.harvestBurst(tx, ty, result.crop.id);
+        // The crop pops out of the plant and comes to you, the same as
+        // everything else the valley gives up.
+        this.pickups.spawn(result.item, result.count, tx * TILE + TILE / 2, ty * TILE + TILE - 4, Math.random);
         this.audio.blip(12, 0.07);
         this.audio.blip(19, 0.05);
         this.camera.shake(0.5, 0.12, 14);
-        if (left > 0) {
-          // Nowhere to put it. Say so rather than silently eating the crop.
-          this.audio.blip(-8, 0.05);
-        }
         break;
       }
     }
   }
 
   /** The moment a tool connects. */
-  private onToolImpact(tool: 'hoe' | 'can'): void {
+  private onToolImpact(tool: ToolKind): void {
     const tx = this.targetTx;
     const ty = this.targetTy;
     const cx = tx * TILE + TILE / 2;
     const cy = ty * TILE + TILE - 2;
+
+    if (tool === 'axe' || tool === 'pick') {
+      this.strike(tool);
+      return;
+    }
 
     if (tool === 'hoe') {
       const cleared = this.farm.clear(tx, ty);
@@ -378,8 +416,51 @@ class Game {
     }
   }
 
+  /** An axe or pick landing on something. */
+  private strike(tool: 'axe' | 'pick'): void {
+    const prop = this.swingProp;
+    this.swingProp = null;
+    if (!prop || prop.gone) {
+      // A swing at nothing still lands; it just achieves nothing.
+      const p = this.player.interactPoint();
+      this.particles.emit({ ...FX.footstepDust(p.x, p.y), count: 3 });
+      this.camera.shake(0.55, 0.1, 20);
+      this.audio.footstep('stone', false);
+      return;
+    }
+
+    const h = prop.def.harvest!;
+    const result = this.world.strikeProp(prop, Math.random);
+    if (!result) return;
+
+    // Chips fly from where the head bit, not from the base of the trunk.
+    const hitY = prop.y - 10;
+    this.particles.emit(FX.impactChips(prop.x, hitY, h.chips));
+    this.camera.shake(tool === 'pick' ? 1.9 : 1.6, 0.18, 15);
+    this.audio.footstep(tool === 'pick' ? 'stone' : 'wood', true);
+    this.audio.blip(tool === 'pick' ? -20 : -16, 0.055);
+
+    if (result.destroyed) {
+      // A bigger burst, a leaf-fall for trees, and the drops themselves.
+      this.particles.emit({
+        ...FX.impactChips(prop.x, hitY, h.chips), count: 16, spread: 6,
+        vz: [26, 58], life: [0.5, 0.95],
+      });
+      if (tool === 'axe') {
+        for (let i = 0; i < 6; i++) {
+          this.particles.emit(FX.leafFall(prop.x + (Math.random() - 0.5) * 26, prop.y - 8, 34));
+        }
+      }
+      this.camera.shake(2.6, 0.3, 11);
+      this.audio.blip(-26, 0.09);
+      for (const drop of result.drops) {
+        this.pickups.spawn(drop.item, drop.count, prop.x, prop.y - 4, Math.random);
+      }
+    }
+  }
+
   /** Every frame the can is pouring. */
-  private onToolSustain(tool: 'hoe' | 'can', dt: number): void {
+  private onToolSustain(tool: ToolKind, dt: number): void {
     if (tool !== 'can') return;
     const tx = this.targetTx;
     const ty = this.targetTy;
@@ -419,7 +500,7 @@ class Game {
   }
 
   private handleHotbar(): void {
-    const keys = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6'] as const;
+    const keys = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6', 'slot7', 'slot8'] as const;
     for (let i = 0; i < keys.length; i++) {
       if (this.input.wasPressed(keys[i])) {
         this.inventory.select(i);
@@ -428,7 +509,7 @@ class Game {
     }
   }
 
-  /** Player plus every visible plant, for the world's depth-sorted pass. */
+  /** Player, plants and dropped items, for the world's depth-sorted pass. */
   private buildDrawables(): Drawable[] {
     const list: Drawable[] = [this.playerDrawable];
     let i = 0;
@@ -443,6 +524,17 @@ class Game {
       list.push(d);
       i++;
     }
+    let j = 0;
+    this.pickups.forEach((drop) => {
+      let d = this.pickupDraws[j];
+      if (!d) {
+        d = new PickupDraw(this);
+        this.pickupDraws[j] = d;
+      }
+      d.bind(drop);
+      list.push(d);
+      j++;
+    });
     return list;
   }
 
@@ -453,6 +545,10 @@ class Game {
 
   get renderWind(): number {
     return this.weather.wind;
+  }
+
+  get renderSun(): { dx: number; dy: number; alpha: number } {
+    return this.sun;
   }
 
   private update(dt: number): void {
@@ -543,6 +639,15 @@ class Game {
       dt, this.time, this.weather, this.clock, this.particles,
       this.camera.originX, this.camera.originY, VIEW_W, VIEW_H,
     );
+    this.pickups.update(
+      dt, this.player.x, this.player.y,
+      (id, count) => this.inventory.add(id, count, this.time),
+      (id, count) => {
+        this.audio.blip(14 + Math.random() * 4, 0.045);
+        const name = item(id).name;
+        this.toast.show(count > 1 ? `${name} x${count}` : name, 1.4);
+      },
+    );
     this.particles.update(dt, this.time);
     this.clouds.update(dt, this.weather.wind);
     this.rain.update(dt, this.weather.rain, this.weather.wind, this.camera.originX, this.camera.originY);
@@ -574,12 +679,18 @@ class Game {
     const camX = camera.originX;
     const camY = camera.originY;
 
+    this.sun = clock.shadow(this.weather.overcast);
+
     renderer.clearWorld();
     world.drawGround(ctx, camX, camY, VIEW_W + 1, VIEW_H + 1, clock);
     // Worked soil sits on the ground, above the terrain and below everything
     // that stands on it.
     this.farm.drawSoil(ctx, camX, camY, VIEW_W + 1, VIEW_H + 1);
-    drawTarget(ctx, this.targetTx, this.targetTy, camX, camY, this.targetKind, this.time);
+    // For a swung tool the bracket goes round the thing being struck; for a
+    // farm action it goes round the square of ground.
+    const brackX = this.harvestTarget ? Math.floor(this.harvestTarget.x / TILE) : this.targetTx;
+    const brackY = this.harvestTarget ? Math.floor((this.harvestTarget.y - 4) / TILE) : this.targetTy;
+    drawTarget(ctx, brackX, brackY, camX, camY, this.targetKind, this.time);
     // Shown exactly when E would open the box — a hint that lies about what a
     // key does is worse than no hint at all.
     const wouldRead = this.lookTarget && (!this.seen.has(this.lookTarget.key) || !this.targetKind);
@@ -653,6 +764,24 @@ class CropDraw implements Drawable {
   draw(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
     if (!this.plot) return;
     this.farm.drawCrop(ctx, this.plot, camX, camY, this.game.renderTime, this.game.renderWind);
+  }
+}
+
+/** Same adapter trick as CropDraw, for items lying on the ground. */
+class PickupDraw implements Drawable {
+  sortY = 0;
+  private drop: Readonly<Drop> | null = null;
+
+  constructor(private game: Game) {}
+
+  bind(drop: Readonly<Drop>): void {
+    this.drop = drop;
+    this.sortY = Pickups.sortY(drop);
+  }
+
+  draw(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
+    if (!this.drop) return;
+    Pickups.draw(ctx, this.drop, camX, camY, this.game.renderTime, this.game.renderSun);
   }
 }
 

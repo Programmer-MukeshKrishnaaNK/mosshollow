@@ -31,7 +31,7 @@ save.
 | `Shift` | run |
 | `E` / `Space` | look at things, use what you're holding |
 | `Esc` | close the dialogue box |
-| `1` – `6` | choose a hotbar slot |
+| `1` – `8` | choose a hotbar slot |
 | `` ` `` | debug overlay (press again for collision boxes, again to hide) |
 | `T` | step the clock on an hour *(development)* |
 
@@ -84,6 +84,12 @@ save.
   noticing the pattern is the discovery, not the stone. A quiet chevron marks
   anything worth reading, and appears only when the interact key would actually
   read it.
+- **A valley you can take apart.** An axe and a pick. Trees take four blows and
+  leave a stump you can grub out afterwards; rocks break and the ground they
+  stood on becomes walkable. What comes loose bounces out onto the grass, waits
+  a beat so you see it land, then homes in as you approach. The deep woods
+  around the edge don't yield — the tiles under them stay solid either way, and
+  a gap you still couldn't walk through would be worse than no gap.
 - **It remembers.** The valley saves itself every morning and whenever you
   close the tab, and picks up where you left off. The loader treats every field
   in the file as optional and validates content ids against the game's data, so
@@ -99,7 +105,7 @@ src/
   render/     renderer, camera, lighting, terrain baker, water, clouds,
               rain, shadows
   world/      tilemap, prop registry, area assembly, collision, depth sort
-  entities/   player, animator
+  entities/   player, animator, dropped items
   systems/    time of day, weather, particles, audio, music, farm, inventory,
               dialogue, save/load
   ui/         bitmap font, panels, HUD, debug overlay

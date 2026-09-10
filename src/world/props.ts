@@ -21,6 +21,32 @@ import {
   REED, SIGN_POST, STUMP, TUFT_A, TUFT_B,
 } from '../art/props.art.ts';
 import type { PaletteKey } from '../art/palette.ts';
+import type { ToolKind } from '../data/items.ts';
+
+/**
+ * One thing the player did to a prop, remembered by where it stood rather than
+ * by an index — the props array changes shape when a tree becomes a stump.
+ */
+export interface PropChange {
+  x: number;
+  y: number;
+  /** Prop id it became, null if it was removed, absent if merely damaged. */
+  to?: string | null;
+  /** Blows remaining. */
+  hp?: number;
+}
+
+/** What a prop gives up, and what it takes to make it. */
+export interface HarvestDef {
+  tool: ToolKind;
+  /** Blows required. Kept small — a tree should be work, not a chore. */
+  hp: number;
+  drops: { item: string; min: number; max: number }[];
+  /** What is left standing afterwards. Omit and the prop is simply gone. */
+  becomes?: string;
+  /** Palette ramp for the chips thrown off on each hit. */
+  chips: PaletteKey[];
+}
 
 export interface PropLayer {
   sprite: Sprite;
@@ -56,6 +82,8 @@ export interface PropDef {
   sheds?: { rate: number; height: number; spread: number };
   /** Default entry in the inspect table. A placement can override it. */
   inspect?: string;
+  /** Present if this prop can be worked with a tool. */
+  harvest?: HarvestDef;
 }
 
 export interface Prop {
@@ -68,6 +96,20 @@ export interface Prop {
   phase: number;
   /** Per-instance sway scale, so a stand of trees is not one organism. */
   swayScale: number;
+  /** Blows remaining. Undefined until the prop is first struck. */
+  hp?: number;
+  /**
+   * Scenery rather than a resource. The wall of trees around the area is
+   * protected: the tiles under it stay solid regardless, so felling one would
+   * leave a gap you still could not walk through.
+   */
+  guarded?: boolean;
+  /** Removed from the world but still in the array; skipped everywhere. */
+  gone?: boolean;
+  /** Decaying impulse from the last blow, in pixels. */
+  shake?: number;
+  /** Direction of that impulse. */
+  shakeDir?: number;
 }
 
 // --- sprite construction ----------------------------------------------------
@@ -131,6 +173,11 @@ export function buildProps(): Record<string, PropDef> {
       ],
       collider: { dx: -6, dy: -6, w: 12, h: 6 },
       sheds: { rate: 0.22, height: 34, spread: 22 },
+      harvest: {
+        tool: 'axe', hp: 4, becomes: 'stump',
+        drops: [{ item: 'wood', min: 2, max: 4 }],
+        chips: ['wood0', 'wood1', 'wood2'],
+      },
     };
   }
 
@@ -146,6 +193,11 @@ export function buildProps(): Record<string, PropDef> {
       ],
       collider: { dx: -4, dy: -5, w: 8, h: 5 },
       sheds: { rate: 0.3, height: 32, spread: 15 },
+      harvest: {
+        tool: 'axe', hp: 3, becomes: 'stump',
+        drops: [{ item: 'wood', min: 1, max: 3 }],
+        chips: ['cream0', 'wood0', 'wood1'],
+      },
     };
   }
 
@@ -165,6 +217,11 @@ export function buildProps(): Record<string, PropDef> {
       id: `rock${v}`,
       layers: [{ sprite: s, dx: -Math.floor(s.w / 2), dy: -s.h, sway: 0 }],
       collider: { dx: -Math.floor(s.w / 2) + 2, dy: -4, w: s.w - 4, h: 5 },
+      harvest: {
+        tool: 'pick', hp: big ? 3 : 2,
+        drops: [{ item: 'stone', min: big ? 2 : 1, max: big ? 4 : 2 }],
+        chips: ['stone0', 'stone1', 'stone2'],
+      },
     };
   }
 
@@ -176,6 +233,13 @@ export function buildProps(): Record<string, PropDef> {
     id: 'stump',
     layers: [{ sprite: stump, dx: -7, dy: -12, sway: 0 }],
     collider: { dx: -6, dy: -4, w: 12, h: 4 },
+    // Grubbing out the stump is the second half of clearing a tree, and it is
+    // what actually gives the land back.
+    harvest: {
+      tool: 'axe', hp: 3,
+      drops: [{ item: 'wood', min: 1, max: 2 }],
+      chips: ['wood0', 'wood1', 'wood2'],
+    },
   };
 
   const post = sprite(FENCE_POST, 3, 14);

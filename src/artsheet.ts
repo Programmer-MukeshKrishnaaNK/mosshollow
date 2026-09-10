@@ -178,7 +178,7 @@ if (page === 5) {
   // A real filmstrip: an actual Player is driven through a real swing and
   // drawn every few frames. Judging animation from static poses is guesswork —
   // what matters is the spacing between them.
-  const strip = (tool: 'hoe' | 'can', facing: 'down' | 'right' | 'up', y: number): void => {
+  const strip = (tool: 'hoe' | 'can' | 'axe' | 'pick', facing: 'down' | 'right' | 'up', y: number): void => {
     label(`${tool} — facing ${facing}`, 8, y - 12);
     const p = new Player(24, 40);
     p.facing = facing;
@@ -188,7 +188,7 @@ if (page === 5) {
     let t = 0;
     const shots = 11;
     // Sample evenly across the whole swing so the strip shows its real timing.
-    const total = tool === 'hoe' ? 0.53 : 0.76;
+    const total = tool === 'can' ? 0.76 : tool === 'hoe' ? 0.53 : 0.65;
     const stepDt = total / (shots - 1);
     for (let i = 0; i < shots; i++) {
       const cell = makeCanvas(40, 48);
@@ -208,10 +208,10 @@ if (page === 5) {
       t += stepDt;
     }
   };
-  strip('hoe', 'down', 24);
-  strip('hoe', 'right', 214);
-  strip('can', 'down', 404);
-  strip('hoe', 'up', 594);
+  strip('axe', 'right', 24);
+  strip('pick', 'right', 214);
+  strip('hoe', 'down', 404);
+  strip('can', 'down', 594);
 }
 
 // Page links, so the next screenshot can just navigate.

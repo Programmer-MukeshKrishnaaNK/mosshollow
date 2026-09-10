@@ -14,7 +14,11 @@ export interface Slot {
   count: number;
 }
 
-export const HOTBAR_SIZE = 6;
+/**
+ * Eight, not six. Six was exactly the size of the starting kit, so the first
+ * thing the player ever picked up went into a slot they could not see.
+ */
+export const HOTBAR_SIZE = 8;
 
 export class Inventory {
   readonly slots: Slot[];

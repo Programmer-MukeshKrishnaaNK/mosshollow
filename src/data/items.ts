@@ -5,16 +5,16 @@
 
 import { sprite, type Sprite } from '../art/pixel.ts';
 import {
-  ICON_BELLROOT, ICON_CAN, ICON_HOE, ICON_SEED_BELLROOT,
-  ICON_SEED_WHEAT, ICON_WHEAT,
+  ICON_AXE, ICON_BELLROOT, ICON_CAN, ICON_HOE, ICON_PICK,
+  ICON_SEED_BELLROOT, ICON_SEED_WHEAT, ICON_STONE, ICON_WHEAT, ICON_WOOD,
 } from '../art/tools.art.ts';
 
-export type ToolKind = 'hoe' | 'can';
+export type ToolKind = 'hoe' | 'can' | 'axe' | 'pick';
 
 export interface ItemDef {
   id: string;
   name: string;
-  kind: 'tool' | 'seed' | 'produce';
+  kind: 'tool' | 'seed' | 'produce' | 'material';
   /** How many fit in one slot. Tools never stack. */
   stack: number;
   /** Tools only. */
@@ -38,6 +38,22 @@ export const ITEMS: Record<string, ItemDef> = {
   can: def(
     { id: 'can', name: 'Watering Can', kind: 'tool', stack: 1, tool: 'can', blurb: 'Dry seed does nothing at all.' },
     sprite(ICON_CAN, 7, 14),
+  ),
+  axe: def(
+    { id: 'axe', name: 'Axe', kind: 'tool', stack: 1, tool: 'axe', blurb: 'The handle is worn smooth in one place.' },
+    sprite(ICON_AXE, 7, 14),
+  ),
+  pick: def(
+    { id: 'pick', name: 'Pick', kind: 'tool', stack: 1, tool: 'pick', blurb: 'For the stones that will move.' },
+    sprite(ICON_PICK, 7, 14),
+  ),
+  wood: def(
+    { id: 'wood', name: 'Wood', kind: 'material', stack: 99, blurb: 'Cut, stacked, and waiting for you to decide.' },
+    sprite(ICON_WOOD, 7, 14),
+  ),
+  stone: def(
+    { id: 'stone', name: 'Stone', kind: 'material', stack: 99, blurb: 'The valley is mostly this, under everything else.' },
+    sprite(ICON_STONE, 7, 14),
   ),
   seed_bellroot: def(
     { id: 'seed_bellroot', name: 'Bellroot Seed', kind: 'seed', stack: 99, plants: 'bellroot', blurb: 'Somebody saved these, and labelled them twice.' },

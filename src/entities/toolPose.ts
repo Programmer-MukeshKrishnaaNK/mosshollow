@@ -72,6 +72,17 @@ export const CAN_ANCHORS: Record<Facing, FacingAnchors> = {
 };
 
 /**
+ * The axe and pick swing the same arc as the hoe — they are all a tool brought
+ * down on something. Sharing the anchors is not laziness: a character who
+ * swings three tools three different ways reads as three different characters.
+ */
+export const SWING_ANCHORS: Record<'hoe' | 'axe' | 'pick', Record<Facing, FacingAnchors>> = {
+  hoe: HOE_ANCHORS,
+  axe: HOE_ANCHORS,
+  pick: HOE_ANCHORS,
+};
+
+/**
  * Swing timings, in seconds.
  *
  * The hoe is a blow: wind up, hold — that hold is the anticipation, and it is
@@ -95,5 +106,9 @@ export const TOOL_TIMING = {
   // see it land, which is the entire difference between a swing and a sprite
   // swap.
   hoe: { raise: 0.13, hold: 0.08, strike: 0.1, recover: 0.22, shake: 1.15, sustained: false },
+  // The axe winds up further and hits harder. A heavier tool should cost you
+  // more time before it lands, or "heavy" is just a bigger number.
+  axe: { raise: 0.17, hold: 0.1, strike: 0.11, recover: 0.26, shake: 1.7, sustained: false },
+  pick: { raise: 0.16, hold: 0.09, strike: 0.11, recover: 0.25, shake: 1.9, sustained: false },
   can: { raise: 0.14, hold: 0.04, strike: 0.34, recover: 0.24, shake: 0, sustained: true },
 } as const;
