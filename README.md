@@ -53,6 +53,18 @@ Then open the URL Vite prints. `npm run build` produces `dist/`.
 - **Movement worth the fuss.** Separate acceleration and braking, normalised
   diagonals, newest-key-wins turning, axis-separated collision that slides
   along walls, and a walk cycle whose playback rate follows actual speed.
+- **Weather that changes the valley.** The sky runs its own slow state machine
+  — clear, gathering, raining, clearing. Cloud closes over before the first
+  drop falls, the wind gets up ahead of it, shadows dissolve, colour drains,
+  the lanterns come on early because the afternoon has gone dark, and nothing
+  small flies until it passes. Every drop lands and leaves a splash; the pond
+  gets rings.
+- **Sound, synthesised.** No audio files either. Wind through a filter that
+  opens with the gusts, rain and individual drips, water lapping when you're
+  near the pond, birds by day and crickets after dark, and footsteps that know
+  whether you're on grass, earth, stone or a wooden dock.
+- **A generated score.** Sparse pentatonic plucks over a four-chord pad that
+  drifts, thinning out and dropping an octave after dark. Not a loop.
 
 ## How it fits together
 
@@ -60,10 +72,11 @@ Then open the URL Vite prints. `npm run build` produces `dist/`.
 src/
   core/       loop, fixed timestep, input, math, seeded noise
   art/        palette, pixel-map toolkit, authored sprites, generators
-  render/     renderer, camera, lighting, terrain baker, water, clouds, shadows
+  render/     renderer, camera, lighting, terrain baker, water, clouds,
+              rain, shadows
   world/      tilemap, prop registry, area assembly, collision, depth sort
   entities/   player, animator
-  systems/    time of day, weather, particles
+  systems/    time of day, weather, particles, audio, music
   ui/         bitmap font, panels, HUD, debug overlay
   data/       area content (ASCII maps and prop placements)
 ```
@@ -88,6 +101,6 @@ tool and is not part of the game.
 
 ## Status
 
-Early. The first vertical slice — one area that feels good to walk around — is
-in. Farming, crafting, NPCs, dialogue, quests and saving are not built yet; see
-the roadmap in `docs/STATUS.md`.
+Early. The first vertical slice — one area that feels good to walk around, in
+any weather, at any hour — is in. Farming, crafting, NPCs, dialogue, quests and
+saving are not built yet; see the roadmap in `docs/STATUS.md`.

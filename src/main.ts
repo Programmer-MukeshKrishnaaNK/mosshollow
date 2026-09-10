@@ -16,8 +16,11 @@ import { HOMESTEAD } from './data/homestead.ts';
 import { Player } from './entities/player.ts';
 import { Camera } from './render/camera.ts';
 import { CloudShadows } from './render/clouds.ts';
+import { Rain } from './render/rain.ts';
 import { Lighting, type Light } from './render/lighting.ts';
 import { Renderer, VIEW_H, VIEW_W } from './render/renderer.ts';
+import { GameAudio, type Ground } from './systems/audio.ts';
+import { Music } from './systems/music.ts';
 import { FX, Particles } from './systems/particles.ts';
 import { TimeOfDay } from './systems/time.ts';
 import { Weather } from './systems/weather.ts';
@@ -35,6 +38,12 @@ class Game {
   private particles = new Particles();
   private lighting = new Lighting(VIEW_W + 1, VIEW_H + 1);
   private clouds: CloudShadows;
+  private rain = new Rain(VIEW_W + 1, VIEW_H + 1);
+  private audio = new GameAudio();
+  private music = new Music();
+  /** Sampled a few times a second, not per frame — it only drives a volume. */
+  private waterNearness = 0;
+  private waterSampleTimer = 0;
   private world: World;
   private player: Player;
   private camera: Camera;
@@ -84,6 +93,8 @@ class Game {
         setHour: (h: number) => { this.clock.minutes = h * 60; },
         teleport: (x: number, y: number) => { this.player.x = x; this.player.y = y; this.camera.snapTo(x, this.player.focusY); },
         skipTitle: () => { this.title.dismissed = true; this.title.t = 99; this.title.update(0, true); },
+        setSky: (sky: 'clear' | 'gathering' | 'rain' | 'clearing', hold = 600) => this.weather.setSky(sky, hold),
+        weather: () => ({ wind: this.weather.wind, rain: this.weather.rain, overcast: this.weather.overcast, sky: this.weather.sky }),
         /**
          * Advance the simulation by whole frames and redraw, without waiting
          * for requestAnimationFrame. Automated visual checks run headless or
@@ -102,14 +113,39 @@ class Game {
 
   private onFootstep(x: number, y: number): void {
     const mat = this.world.materialAt(x, y);
-    // The ground answers back differently depending on what it is.
-    if (mat === Mat.Path || mat === Mat.Field) this.particles.emit(FX.footstepDust(x, y - 1));
-    else if (mat === Mat.Grass) this.particles.emit(FX.grassBrush(x, y - 1));
-    else if (mat === Mat.Soil) this.particles.emit({ ...FX.footstepDust(x, y - 1), ramp: ['soil0', 'soil1', 'soil2'] });
+    // The ground answers back differently depending on what it is — in the
+    // particles it throws up and in the sound it makes.
+    let ground: Ground = 'grass';
+    if (mat === Mat.Path || mat === Mat.Field) {
+      ground = 'dirt';
+      this.particles.emit(FX.footstepDust(x, y - 1));
+    } else if (mat === Mat.Grass) {
+      this.particles.emit(FX.grassBrush(x, y - 1));
+    } else if (mat === Mat.Soil) {
+      ground = 'soil';
+      this.particles.emit({ ...FX.footstepDust(x, y - 1), ramp: ['soil0', 'soil1', 'soil2'] });
+    } else if (mat === Mat.Stone) {
+      ground = 'stone';
+    }
+    // Wet ground splashes rather than puffs.
+    if (this.weather.rain > 0.3 && ground !== 'grass') {
+      this.particles.emit({ ...FX.splash(x, y - 1), count: 3, vz: [8, 16] });
+    }
+    this.audio.footstep(ground, this.player.running);
   }
 
   private update(dt: number): void {
     this.time += dt;
+
+    // Browsers will not let audio start without a gesture, so the first key
+    // press is what brings the valley's sound up.
+    if (this.input.anyInputYet && !this.audio.running) {
+      this.audio.start();
+      const ctx = this.audio.context;
+      const dest = this.audio.musicDestination;
+      if (ctx && dest) this.music.attach(ctx, dest);
+    }
+    this.audio.resume();
 
     if (this.input.wasPressed('debug')) this.debug.toggle();
     // T steps the clock on an hour. The fastest way to check that dusk still
@@ -135,6 +171,20 @@ class Game {
     );
     this.particles.update(dt, this.time);
     this.clouds.update(dt, this.weather.wind);
+    this.rain.update(dt, this.weather.rain, this.weather.wind, this.camera.originX, this.camera.originY);
+
+    this.waterSampleTimer -= dt;
+    if (this.waterSampleTimer <= 0) {
+      this.waterSampleTimer = 0.3;
+      this.waterNearness = this.world.waterProximity(this.player.x, this.player.y);
+    }
+    this.audio.update(dt, {
+      wind: this.weather.wind,
+      darkness: this.clock.darkness,
+      rain: this.weather.rain,
+      water: this.waterNearness,
+    });
+    this.music.update(this.clock.darkness, this.weather.rain, this.title.dismissed ? 1 : 0.4);
     this.camera.follow(this.player.x, this.player.focusY, this.player.vx, this.player.vy, dt);
 
     this.playerDrawable.sortY = this.player.y;
@@ -152,6 +202,10 @@ class Game {
 
     renderer.clearWorld();
     world.drawGround(ctx, camX, camY, VIEW_W + 1, VIEW_H + 1, clock);
+    // Ripples belong on the water surface; splashes belong on the ground, under
+    // anything standing on it.
+    this.rain.drawWaterRings(ctx, this.time, this.weather.rain, camX, camY, world.isWater);
+    this.rain.drawSplashes(ctx, camX, camY);
     world.drawSorted(
       ctx, camX, camY, VIEW_W + 1, VIEW_H + 1,
       [this.playerDrawable], this.particles, clock, this.weather,
@@ -159,14 +213,26 @@ class Game {
 
     // Lighting last, over the finished picture.
     this.lighting.begin();
-    world.collectLights((l: Light) => this.lighting.add(l), clock);
-    // Clouds only cast while the sun is high enough to make a shadow at all.
+    world.collectLights((l: Light) => this.lighting.add(l), clock, this.weather.overcast * 0.45);
+    // Clouds only cast while the sun is high enough to make a shadow at all,
+    // and not at all once the sky has closed over.
     const sunUp = 1 - clock.darkness;
-    this.lighting.render(ctx, clock.ambientCss(), camX, camY, this.time, clock.lampStrength, {
+    const overcast = this.weather.overcast;
+    // Wet ground is darker ground. Folding rain into the overcast term is
+    // enough to make the whole valley read as soaked.
+    const gloom = Math.min(1, overcast + this.weather.rain * 0.22);
+    this.lighting.render(ctx, clock.ambientCss(gloom), camX, camY, this.time, clock.lampStrength, {
       clouds: this.clouds,
-      cloudStrength: sunUp * sunUp * 0.85,
-      desaturate: clock.darkness * 0.72,
+      cloudStrength: sunUp * sunUp * 0.85 * (1 - overcast),
+      // Rain washes the colour out of everything, and so does moonlight.
+      desaturate: Math.max(clock.darkness * 0.72, this.weather.rain * 0.4),
     });
+
+    // Falling rain goes on last, over the lit picture. It is between the camera
+    // and the world rather than part of it, so the valley's ambient light has
+    // no business darkening it — put it before the multiply and a downpour
+    // vanishes into an overcast scene, which is exactly what happened first.
+    this.rain.drawFall(ctx, this.weather.rain, this.weather.wind);
 
     this.debug.drawWorld(ctx, world, this.player, camX, camY);
 

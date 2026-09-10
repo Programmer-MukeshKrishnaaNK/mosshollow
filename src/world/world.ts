@@ -329,14 +329,19 @@ export class World {
       const px = camX - 24 + rng() * (viewW + 48);
       const py = camY - 24 + rng() * (viewH + 48);
       const mat = this.map.matAtPixel(px, py);
-      if (dark > 0.55) {
-        // Fireflies gather over grass and near water, and never over the path.
-        if (mat === Mat.Grass && rng() < 0.5) particles.emit(FX.firefly(px, py));
-      } else if (dark < 0.3) {
-        if (mat !== Mat.Water && rng() < 0.45) particles.emit(FX.pollen(px, py));
+      // Nothing small flies in the rain. The valley emptying out when the sky
+      // closes over is most of what makes the weather feel like weather.
+      if (weather.fair) {
+        if (dark > 0.55) {
+          // Fireflies gather over grass, and never over the path.
+          if (mat === Mat.Grass && rng() < 0.5) particles.emit(FX.firefly(px, py));
+        } else if (dark < 0.3) {
+          if (mat !== Mat.Water && rng() < 0.45) particles.emit(FX.pollen(px, py));
+        }
       }
       // Leaves come off the trees in proportion to the wind.
-      const gust = Math.abs(weather.wind);
+      // Wind strips more leaves in a squall than on a still afternoon.
+      const gust = Math.abs(weather.wind) * (1 + weather.rain);
       if (gust > 0.35 && this.shedders.length && rng() < gust * 0.5) {
         const p = this.shedders[Math.floor(rng() * this.shedders.length)];
         if (p.x > camX - 40 && p.x < camX + viewW + 40 && p.y > camY - 80 && p.y < camY + viewH + 40) {
@@ -347,9 +352,13 @@ export class World {
     }
   }
 
-  /** Lights for this frame, gathered from props and the house. */
-  collectLights(out: (l: Light) => void, clock: TimeOfDay): void {
-    const lamp = clock.lampStrength;
+  /**
+   * Lights for this frame, gathered from props and the house.
+   * @param gloom extra darkness from weather — people light lamps early when
+   *              the sky closes over, and that is a nice thing to see happen.
+   */
+  collectLights(out: (l: Light) => void, clock: TimeOfDay, gloom = 0): void {
+    const lamp = Math.min(1, clock.lampStrength + gloom);
     for (const p of this.props) {
       if (!p.def.lights) continue;
       for (const l of p.def.lights) {
@@ -409,7 +418,7 @@ export class World {
     clock: TimeOfDay,
     weather: Weather,
   ): void {
-    const sun = clock.shadow();
+    const sun = clock.shadow(weather.overcast);
     const top = camY - 90;
     const bottom = camY + viewH + 40;
     const left = camX - 70;
@@ -498,6 +507,29 @@ export class World {
   /** What the ground is made of at a point — used for footstep effects. */
   materialAt(x: number, y: number): Mat {
     return this.map.matAtPixel(x, y);
+  }
+
+  /** Is this world point open water? Used by the rain's ripple pass. */
+  isWater = (x: number, y: number): boolean => this.map.matAtPixel(x, y) === Mat.Water;
+
+  /**
+   * How much open water is within earshot, 0..1. Sampled on a coarse ring
+   * rather than a full radius scan — this only has to drive a volume.
+   */
+  waterProximity(x: number, y: number): number {
+    let hits = 0;
+    let total = 0;
+    for (let r = 1; r <= 5; r++) {
+      for (let a = 0; a < 8; a++) {
+        const ang = (a / 8) * TAU + r * 0.4;
+        const tx = Math.floor(x / TILE + Math.cos(ang) * r * 1.6);
+        const ty = Math.floor(y / TILE + Math.sin(ang) * r * 1.6);
+        total++;
+        // Nearer rings count for more.
+        if (this.map.matAt(tx, ty) === Mat.Water) hits += 1 / r;
+      }
+    }
+    return Math.min(1, (hits / (total * 0.12)));
   }
 
   get spawn(): { x: number; y: number } {

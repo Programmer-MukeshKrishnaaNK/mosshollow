@@ -16,7 +16,7 @@ import { hash2 } from '../core/rng.ts';
 import { PALETTE, hexToRgb } from '../art/palette.ts';
 import { ctxOf, makeCanvas } from '../art/pixel.ts';
 
-const TILE_SIZE = 64;
+const TILE_SIZE = 128;
 const FRAMES = 8;
 
 export class WaterSurface {
@@ -119,29 +119,37 @@ function buildSurfaceTile(phase: number): HTMLCanvasElement {
     for (let x = 0; x < TILE_SIZE; x++) {
       const u = (x / TILE_SIZE) * TAU;
       const v = (y / TILE_SIZE) * TAU;
-      // Three crossing wave trains at different scales and speeds; the sum
-      // never repeats visibly inside one tile.
+      // Seven crossing wave trains at co-prime-ish frequencies. Three was not
+      // enough: across a whole pond the tile boundary was plainly visible, and
+      // the surface read as wallpaper. The low terms give the broad swell, the
+      // high ones break up the repeat.
       const wave =
-        Math.sin(u * 1 + v * 2 + phase) * 0.5 +
-        Math.sin(u * 3 - v * 1 - phase * 1.7) * 0.3 +
-        Math.sin(u * 2 + v * 4 + phase * 0.6) * 0.2;
-      const grain = hash2(x, y, 401) * 0.16;
-      const t = wave * 0.5 + 0.5 + grain - 0.08;
+        Math.sin(u * 1 + v * 2 + phase) * 0.42 +
+        Math.sin(u * 3 - v * 1 - phase * 1.7) * 0.26 +
+        Math.sin(u * 2 + v * 5 + phase * 0.6) * 0.18 +
+        Math.sin(u * 5 + v * 3 - phase * 1.3) * 0.13 +
+        Math.sin(u * 7 - v * 4 + phase * 0.4) * 0.09 +
+        Math.sin(u * 4 + v * 9 + phase * 2.1) * 0.07 +
+        Math.sin(u * 11 + v * 6 - phase * 0.9) * 0.05;
+      const grain = hash2(x, y, 401) * 0.13;
+      const t = wave * 0.5 + 0.5 + grain - 0.065;
       const i = (y * TILE_SIZE + x) * 4;
       let c3: number[];
       let alpha: number;
-      if (t > 0.88) {
+      // Highlights are rarer than they were, so the surface reads as water
+      // catching light in places rather than as a patterned sheet.
+      if (t > 0.93) {
         c3 = foam;
         alpha = 250;
-      } else if (t > 0.7) {
+      } else if (t > 0.79) {
         c3 = light;
         alpha = 235;
-      } else if (t > 0.42) {
+      } else if (t > 0.46) {
         c3 = mid;
-        alpha = 210;
+        alpha = 212;
       } else {
         c3 = deep;
-        alpha = 196;
+        alpha = 198;
       }
       d[i] = c3[0];
       d[i + 1] = c3[1];
@@ -164,7 +172,10 @@ function buildFoamTile(phase: number): HTMLCanvasElement {
     for (let x = 0; x < TILE_SIZE; x++) {
       const u = (x / TILE_SIZE) * TAU;
       const v = (y / TILE_SIZE) * TAU;
-      const wave = Math.sin(u * 2 + v * 1 + phase * 1.4) * 0.6 + Math.sin(u * 5 - v * 3 - phase) * 0.4;
+      const wave =
+        Math.sin(u * 2 + v * 1 + phase * 1.4) * 0.45 +
+        Math.sin(u * 5 - v * 3 - phase) * 0.3 +
+        Math.sin(u * 9 + v * 7 + phase * 1.9) * 0.25;
       const t = wave * 0.5 + 0.5;
       const on = t > 0.58 && hash2(x, y, 907) > 0.42;
       const i = (y * TILE_SIZE + x) * 4;

@@ -125,10 +125,22 @@ export class TimeOfDay {
     };
   }
 
-  /** Ambient colour pre-multiplied by its level — what lighting fills with. */
-  ambientCss(): string {
+  /**
+   * Ambient colour pre-multiplied by its level — what lighting fills with.
+   *
+   * `overcast` both dims the valley and pulls the light toward a flat blue
+   * grey, because cloud does not simply turn the sun down: it removes the
+   * warmth and the direction from it as well.
+   */
+  ambientCss(overcast = 0): string {
     const s = this.sample();
-    return rgbToCss(s.ambient[0] * s.level, s.ambient[1] * s.level, s.ambient[2] * s.level);
+    const o = clamp(overcast, 0, 1);
+    const level = s.level * (1 - o * 0.34);
+    const grey = (s.ambient[0] + s.ambient[1] + s.ambient[2]) / 3;
+    const r = lerp(s.ambient[0], grey * 0.94, o * 0.8);
+    const g = lerp(s.ambient[1], grey * 0.97, o * 0.8);
+    const b = lerp(s.ambient[2], grey * 1.08, o * 0.8);
+    return rgbToCss(r * level, g * level, b * level);
   }
 
   skyCss(): string {
@@ -140,7 +152,7 @@ export class TimeOfDay {
    * Where shadows fall. Long and to the west at sunrise, short at noon, long
    * and to the east at sunset — the cheapest possible cue that time is passing.
    */
-  shadow(): { dx: number; dy: number; alpha: number } {
+  shadow(overcast = 0): { dx: number; dy: number; alpha: number } {
     const h = this.hour;
     // Daylight fraction: 0 before sunrise and after sunset, 1 around noon.
     const up = clamp((h - 5.6) / 1.4, 0, 1) * clamp((20.2 - h) / 1.6, 0, 1);
@@ -150,7 +162,8 @@ export class TimeOfDay {
     return {
       dx: -Math.cos(t * Math.PI) * len,
       dy: 0.9 + lengthen * 0.8,
-      alpha: (0.16 + up * 0.24) * (0.35 + up * 0.65),
+      // Cloud does not just soften a shadow, it erases it.
+      alpha: (0.16 + up * 0.24) * (0.35 + up * 0.65) * (1 - clamp(overcast, 0, 1) * 0.82),
     };
   }
 }

@@ -1,0 +1,343 @@
+/**
+ * AUDIO
+ *
+ * Every sound in Mosshollow is synthesised at runtime. There are no audio
+ * files, for the same reason there are no image files: the game should be one
+ * self-contained thing, and a valley that sounds like it was assembled from a
+ * sample pack does not sound like one place.
+ *
+ * The layers:
+ *   ambience — wind through the trees, rain, water at the shore
+ *   life     — birds by day, crickets after dark, a lantern's hum up close
+ *   sfx      — footsteps keyed to what you are standing on, interactions
+ *
+ * Ambience is a handful of long-lived nodes whose gains and filter frequencies
+ * are driven each frame. One-shots build and discard their own small graphs.
+ *
+ * Nothing starts until the player touches a key: browsers require a gesture,
+ * and starting silent-but-running would waste the audio thread on a tab nobody
+ * is listening to.
+ */
+
+import { clamp } from '../core/math.ts';
+
+export type Ground = 'grass' | 'dirt' | 'stone' | 'wood' | 'soil';
+
+export interface AudioState {
+  /** -1..1 from the weather system. */
+  wind: number;
+  /** 0 by day, 1 in the dead of night. */
+  darkness: number;
+  /** 0..1, how hard it is raining. */
+  rain: number;
+  /** 0..1, how close the listener is to open water. */
+  water: number;
+  /** Master mute, e.g. while a menu is open. */
+  muted?: boolean;
+}
+
+export class GameAudio {
+  private ctx: AudioContext | null = null;
+  private master!: GainNode;
+  private ambienceBus!: GainNode;
+  private sfxBus!: GainNode;
+  private noise!: AudioBuffer;
+
+  private windGain!: GainNode;
+  private windFilter!: BiquadFilterNode;
+  private rainGain!: GainNode;
+  private rainFilter!: BiquadFilterNode;
+  private waterGain!: GainNode;
+  private waterFilter!: BiquadFilterNode;
+
+  private birdTimer = 3;
+  private cricketTimer = 1;
+  private started = false;
+  private lastFootstep = 0;
+
+  get running(): boolean {
+    return this.started;
+  }
+
+  /** Call from a real user gesture. Safe to call repeatedly. */
+  start(): void {
+    if (this.started) return;
+    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    this.ctx = new Ctor();
+    const ctx = this.ctx;
+
+    this.master = ctx.createGain();
+    this.master.gain.value = 0;
+    this.master.connect(ctx.destination);
+    // Fade the whole mix up, so enabling audio is never a click in the ear.
+    this.master.gain.linearRampToValueAtTime(0.85, ctx.currentTime + 1.4);
+
+    this.ambienceBus = ctx.createGain();
+    this.ambienceBus.gain.value = 1;
+    this.ambienceBus.connect(this.master);
+
+    this.sfxBus = ctx.createGain();
+    this.sfxBus.gain.value = 1;
+    this.sfxBus.connect(this.master);
+
+    this.noise = makeNoiseBuffer(ctx, 4);
+
+    // --- wind: noise through a band-pass whose frequency and gain follow the
+    //     weather system, so a gust is audible before you see it arrive.
+    const windSrc = loopNoise(ctx, this.noise);
+    this.windFilter = ctx.createBiquadFilter();
+    this.windFilter.type = 'bandpass';
+    this.windFilter.frequency.value = 480;
+    this.windFilter.Q.value = 0.7;
+    this.windGain = ctx.createGain();
+    this.windGain.gain.value = 0.0;
+    windSrc.connect(this.windFilter).connect(this.windGain).connect(this.ambienceBus);
+    windSrc.start();
+
+    // --- rain: broad noise, rolled off so it is a hiss on leaves rather than
+    //     static, plus individual drips scheduled while it falls.
+    const rainSrc = loopNoise(ctx, this.noise);
+    this.rainFilter = ctx.createBiquadFilter();
+    this.rainFilter.type = 'lowpass';
+    this.rainFilter.frequency.value = 3800;
+    this.rainGain = ctx.createGain();
+    this.rainGain.gain.value = 0;
+    rainSrc.connect(this.rainFilter).connect(this.rainGain).connect(this.ambienceBus);
+    rainSrc.start();
+
+    // --- water: slow, low, and modulated so it laps rather than hisses.
+    const waterSrc = loopNoise(ctx, this.noise);
+    this.waterFilter = ctx.createBiquadFilter();
+    this.waterFilter.type = 'lowpass';
+    this.waterFilter.frequency.value = 700;
+    this.waterGain = ctx.createGain();
+    this.waterGain.gain.value = 0;
+    waterSrc.connect(this.waterFilter).connect(this.waterGain).connect(this.ambienceBus);
+    waterSrc.start();
+    // A slow LFO on the water gain gives the shore its rhythm.
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.24;
+    const lfoDepth = ctx.createGain();
+    lfoDepth.gain.value = 0.5;
+    lfo.connect(lfoDepth).connect(this.waterGain.gain);
+    lfo.start();
+
+    this.started = true;
+  }
+
+  resume(): void {
+    if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume();
+  }
+
+  update(dt: number, s: AudioState): void {
+    if (!this.ctx || !this.started) return;
+    const t = this.ctx.currentTime;
+    const gust = Math.abs(s.wind);
+
+    this.master.gain.setTargetAtTime(s.muted ? 0 : 0.85, t, 0.15);
+
+    // Wind gets louder and brighter as it picks up. Rain masks it.
+    const windLevel = (0.012 + gust * 0.055) * (1 - s.rain * 0.4);
+    this.windGain.gain.setTargetAtTime(windLevel, t, 0.5);
+    this.windFilter.frequency.setTargetAtTime(360 + gust * 700, t, 0.6);
+
+    this.rainGain.gain.setTargetAtTime(s.rain * 0.17, t, 0.8);
+    this.rainFilter.frequency.setTargetAtTime(2600 + s.rain * 2600, t, 0.8);
+
+    // The LFO swings around this value, so keep it as the midpoint.
+    this.waterGain.gain.setTargetAtTime(s.water * 0.05, t, 0.6);
+
+    // --- birds by day, crickets after dark -------------------------------
+    this.birdTimer -= dt;
+    if (this.birdTimer <= 0) {
+      const active = s.darkness < 0.35 && s.rain < 0.5;
+      this.birdTimer = active ? 1.6 + Math.random() * 5.5 : 2 + Math.random() * 3;
+      if (active) this.birdCall();
+    }
+    this.cricketTimer -= dt;
+    if (this.cricketTimer <= 0) {
+      const active = s.darkness > 0.55 && s.rain < 0.35;
+      this.cricketTimer = active ? 0.28 + Math.random() * 0.5 : 1.5;
+      if (active) this.cricket(0.5 + Math.random() * 0.5);
+    }
+    if (s.rain > 0.2 && Math.random() < dt * s.rain * 12) this.drip();
+  }
+
+  /** A footstep. The ground decides what it sounds like. */
+  footstep(ground: Ground, running: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.started) return;
+    // Cheap guard against two steps landing on the same millisecond.
+    if (ctx.currentTime - this.lastFootstep < 0.04) return;
+    this.lastFootstep = ctx.currentTime;
+
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.playbackRate.value = 0.8 + Math.random() * 0.4;
+
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    let peak = running ? 0.16 : 0.1;
+    let decay = 0.09;
+
+    switch (ground) {
+      case 'grass':
+        // A soft brush, mostly high frequencies, no body.
+        filter.type = 'bandpass';
+        filter.frequency.value = 2400 + Math.random() * 900;
+        filter.Q.value = 0.6;
+        peak *= 0.7;
+        decay = 0.075;
+        break;
+      case 'dirt':
+        filter.type = 'lowpass';
+        filter.frequency.value = 900 + Math.random() * 300;
+        decay = 0.07;
+        break;
+      case 'soil':
+        filter.type = 'lowpass';
+        filter.frequency.value = 620 + Math.random() * 200;
+        peak *= 1.05;
+        decay = 0.085;
+        break;
+      case 'stone':
+        filter.type = 'highpass';
+        filter.frequency.value = 1500;
+        peak *= 0.9;
+        decay = 0.05;
+        break;
+      case 'wood':
+        // Hollow: a resonant peak is what makes a board sound like a board.
+        filter.type = 'bandpass';
+        filter.frequency.value = 320 + Math.random() * 90;
+        filter.Q.value = 4.5;
+        peak *= 1.5;
+        decay = 0.13;
+        break;
+    }
+
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(peak, t + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    src.connect(filter).connect(gain).connect(this.sfxBus);
+    src.start(t);
+    src.stop(t + decay + 0.02);
+  }
+
+  /** Soft confirmation blip for interactions and UI. */
+  blip(semitone = 0, level = 0.06): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.started) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 440 * Math.pow(2, semitone / 12);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(level, t + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    osc.connect(gain).connect(this.sfxBus);
+    osc.start(t);
+    osc.stop(t + 0.26);
+  }
+
+  /** Two or three notes with a pitch bend on each — a bird, not a beep. */
+  private birdCall(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const notes = 2 + Math.floor(Math.random() * 2);
+    const base = 1900 + Math.random() * 1300;
+    for (let i = 0; i < notes; i++) {
+      const t = ctx.currentTime + i * (0.09 + Math.random() * 0.06);
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      const f0 = base * (0.9 + Math.random() * 0.3);
+      osc.frequency.setValueAtTime(f0, t);
+      osc.frequency.exponentialRampToValueAtTime(f0 * (1.15 + Math.random() * 0.35), t + 0.05);
+      osc.frequency.exponentialRampToValueAtTime(f0 * 0.92, t + 0.1);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.02, t + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+      osc.connect(gain).connect(this.ambienceBus);
+      osc.start(t);
+      osc.stop(t + 0.13);
+    }
+  }
+
+  /** A short high trill. Several overlapping ones read as a field at night. */
+  private cricket(level: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime + Math.random() * 0.1;
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = 4200 + Math.random() * 700;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    // Chirp-chirp-chirp rather than one continuous tone.
+    for (let i = 0; i < 3; i++) {
+      const s = t + i * 0.055;
+      gain.gain.exponentialRampToValueAtTime(0.006 * level, s + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, s + 0.035);
+    }
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 4600;
+    filter.Q.value = 8;
+    osc.connect(filter).connect(gain).connect(this.ambienceBus);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+
+  /** A single drop landing — the detail that makes rain feel close. */
+  private drip(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime + Math.random() * 0.3;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    const f = 900 + Math.random() * 1400;
+    osc.frequency.setValueAtTime(f, t);
+    osc.frequency.exponentialRampToValueAtTime(f * 0.55, t + 0.05);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.012, t + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    osc.connect(gain).connect(this.ambienceBus);
+    osc.start(t);
+    osc.stop(t + 0.08);
+  }
+
+  /** Bus for the music layer to hang itself off. */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  get musicDestination(): GainNode | null {
+    return this.started ? this.master : null;
+  }
+}
+
+function makeNoiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
+  const length = Math.floor(ctx.sampleRate * seconds);
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < length; i++) {
+    const white = Math.random() * 2 - 1;
+    // Lightly integrated: pure white noise is harsh and reads as tape hiss.
+    last = last * 0.72 + white * 0.28;
+    data[i] = clamp(last * 2.4, -1, 1);
+  }
+  return buffer;
+}
+
+function loopNoise(ctx: AudioContext, buffer: AudioBuffer): AudioBufferSourceNode {
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  return src;
+}
