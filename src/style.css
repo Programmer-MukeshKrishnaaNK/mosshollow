@@ -1,0 +1,74 @@
+/* The page exists only to hold the canvas and get out of the way. */
+:root {
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  background: #16131c;
+  overflow: hidden;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  /* A hint of the valley's palette bleeding out around the frame. */
+  background:
+    radial-gradient(ellipse at 50% 42%, #241f2c 0%, #16131c 62%, #0e0c12 100%);
+}
+
+#stage {
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.game-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+  /* Grounds the picture without competing with it. */
+  box-shadow:
+    0 0 0 1px #0d0b11,
+    0 18px 48px rgba(0, 0, 0, 0.66);
+}
+
+#boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: #16131c;
+  color: #d9d0b4;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  transition: opacity 420ms ease;
+  z-index: 10;
+}
+
+#boot span {
+  font-size: 15px;
+  color: #c2dc74;
+}
+
+#boot small {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: #7d8593;
+  text-transform: none;
+}
+
+#boot.gone {
+  opacity: 0;
+  pointer-events: none;
+}
