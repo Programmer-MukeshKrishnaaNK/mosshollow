@@ -219,3 +219,51 @@ export const SHEETS: PixelMap[] = [
     'kkkkkkkkk',
   ],
 ];
+
+/** The ninth bell, lying in the hollow the stone came off. 26x22. */
+export const BELL_FOUND: PixelMap = [
+  '..........................',
+  '.........kkkkkk...........',
+  '........kVGGGGVk..........',
+  '.......kVGGGGGGVk.........',
+  '......kGGkkkkkkGGk........',
+  '.....kGGk......kGGk.......',
+  '.....kGk........kGk.......',
+  '....kGGk........kGGk......',
+  '....kGk..........kGk......',
+  '...kGGk..........kGGk.....',
+  '...kGk............kGk.....',
+  '..kGGk.............kGk....',
+  '..kGk...............kGk...',
+  '..kGk...............kGk...',
+  '.kGGk................kGk..',
+  '.kGk.................kGGk.',
+  '.kVkkkkkkkkkkkkkkkkkkkkVk.',
+  '.kVVVVVVVVVVVVVVVVVVVVVVk.',
+  '..kkkkkkkkkkkkkkkkkkkkkk..',
+  '.....kVk..........kVk.....',
+  '......kk............kk....',
+  '..........................',
+];
+
+/** The stone, levered off and set on its edge beside the hollow. 22x18. */
+export const STONE_LIFTED: PixelMap = [
+  '......kkkkkkkkkk......',
+  '....kkaaaaaaaaaakk....',
+  '...kassssssssssssak...',
+  '..kasssssdddssssssak..',
+  '..kassssddddddsssssk..',
+  '..kasssdddddddddsssk..',
+  '..kassddddddddddddsk..',
+  '..kasddddddffffdddsk..',
+  '..kadddddffffffdddsk..',
+  '..kadddffffffffdddsk..',
+  '..kaddffffffffffddsk..',
+  '..kadffffffffffffdsk..',
+  '..kaffffffffffffffsk..',
+  '..kKffffffffffffffKk..',
+  '...kKKffffffffffKKk...',
+  '....kKKKKKKKKKKKKk....',
+  '.....kkkkkkkkkkkk.....',
+  '......................',
+];

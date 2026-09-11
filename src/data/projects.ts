@@ -33,6 +33,12 @@ export interface ProjectDef {
   cost: readonly Ingredient[];
   /** Must be finished first. */
   requires?: readonly string[];
+  /**
+   * A story beat that must have landed before this is even on the board. The
+   * thread's payoff arrives through a door the player already knows how to
+   * open rather than through a new interaction invented for one moment.
+   */
+  requiresStory?: string;
   effects: readonly ProjectEffect[];
   /** Said once, when it is finished. */
   done: string;
@@ -119,6 +125,24 @@ export const PROJECTS: ProjectDef[] = [
       },
     ],
     done: 'The track is lit end to end. It changes the walk home entirely.',
+  },
+  {
+    id: 'lift_stone',
+    name: 'Lever up the pond stone',
+    area: 'homestead',
+    blurb: 'Rue says nobody has ever shifted it. Orrin says nobody ever used a lever.',
+    cost: [{ item: 'plank', count: 3 }],
+    requiresStory: 'rue_place',
+    effects: [
+      {
+        kind: 'addProps',
+        props: [
+          { def: 'stoneLifted', tx: 9.1, ty: 26.4 },
+          { def: 'bellFound', tx: 10.4, ty: 27.2, inspect: 'bell_found' },
+        ],
+      },
+    ],
+    done: 'It comes up easier than eleven years of nobody trying suggests.',
   },
   {
     id: 'ruin_lamp',

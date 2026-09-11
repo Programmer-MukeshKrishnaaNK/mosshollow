@@ -182,6 +182,28 @@ export const INSPECT: Record<string, InspectEntry> = {
     'Four things, for three houses.',
   ],
 
+  // --- Phase 7: what is under the warm stone --------------------------------
+
+  stone_lifted: [
+    'The stone is on its edge beside the hollow it came out of, and the underside is not weathered at all.',
+    'It has been face down for a long time, and before that somebody squared it. It is the same cut as the four markers.',
+    'It is not a marker. It is a lid.',
+  ],
+
+  // The object the whole valley has been arranged around. It answers the
+  // smaller question and makes the larger one worse, which is the job.
+  bell_found: (seen) => [
+    'A bell. Bronze, waist high, green with eleven years of weather and no hands.',
+    'The crown is drilled for a bracket exactly like the nine in the crate at the ruin, and the clapper has been taken out and laid beside it, wrapped, so it could not sound while it was carried.',
+    'Somebody buried a bell the way you would put a child to bed.',
+    seen.has('crate_ruin')
+      ? 'Nine brackets in that crate. Four sites you have found. This is one bell. Wherever the other eight went, they went carefully, and they went separately.'
+      : 'It is far too heavy for one person, and the hollow under it was cut to fit.',
+    'There is a slate tucked against the rim with two lines scratched into it, and the hand is unhurried.',
+    'The first line is a date eleven years old.',
+    'The second line says: IF IT RINGS, DO NOT ANSWER IT.',
+  ],
+
   stump_old: [
     'Cut clean, and a long time ago.',
     'You start counting rings out of habit and lose your place somewhere after sixty.',

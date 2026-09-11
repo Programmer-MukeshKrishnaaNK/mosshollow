@@ -10,11 +10,26 @@
 import { PROJECTS, type ProjectDef } from '../data/projects.ts';
 import { has } from './crafting.ts';
 import type { Inventory } from './inventory.ts';
+import type { Story } from './story.ts';
 
 export type ProjectState = 'done' | 'ready' | 'short' | 'locked';
 
 export class Projects {
   private completed = new Set<string>();
+  /**
+   * Consulted for projects that are gated on the story rather than on other
+   * projects. Set once by the game; the rules stay in here either way.
+   */
+  private story: Story | null = null;
+
+  bindStory(s: Story): void {
+    this.story = s;
+  }
+
+  private storyReady(p: ProjectDef): boolean {
+    if (!p.requiresStory) return true;
+    return !!this.story && this.story.has(p.requiresStory as never);
+  }
 
   get doneList(): string[] {
     return [...this.completed];
@@ -41,6 +56,9 @@ export class Projects {
   visible(): ProjectDef[] {
     return PROJECTS.filter((p) => {
       if (this.completed.has(p.id)) return true;
+      // A story-gated project is not merely locked, it is absent. Showing it
+      // greyed out would advertise the ending.
+      if (!this.storyReady(p)) return false;
       // Hide anything two steps away, so the board is a short list of real
       // options rather than a roadmap.
       const reqs = p.requires ?? [];
@@ -56,6 +74,7 @@ export class Projects {
 
   state(p: ProjectDef, inv: Inventory): ProjectState {
     if (this.completed.has(p.id)) return 'done';
+    if (!this.storyReady(p)) return 'locked';
     if ((p.requires ?? []).some((r) => !this.completed.has(r))) return 'locked';
     return has(inv, p.cost) ? 'ready' : 'short';
   }

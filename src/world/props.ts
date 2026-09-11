@@ -17,7 +17,8 @@ import { FOLIAGE_RAMP, STONE_RAMP, makeBlob } from '../art/organic.ts';
 import { ctxOf, makeCanvas, paintInto, sprite, type Sprite } from '../art/pixel.ts';
 import { buildCottage, buildShed, type CottageKind } from '../art/cottage.ts';
 import {
-  BELL_BRACKET, BELL_FRAME, BENCH, BOWL, LINE_POST, OFFCUTS, SHEETS, WELL,
+  BELL_BRACKET, BELL_FOUND, BELL_FRAME, BENCH, BOWL, LINE_POST, OFFCUTS,
+  SHEETS, STONE_LIFTED, WELL,
 } from '../art/bellrow.art.ts';
 import { PALETTE } from '../art/palette.ts';
 import {
@@ -434,6 +435,28 @@ export function buildProps(): Record<string, PropDef> {
     }
     defs.washline = { id: 'washline', layers, inspect: 'washline' };
   }
+
+  // --- what is under the warm stone ----------------------------------------
+  const bellFound = sprite(BELL_FOUND, 13, 21);
+  defs.bellFound = {
+    id: 'bellFound',
+    layers: [{ sprite: bellFound, dx: -13, dy: -21, sway: 0 }],
+    collider: { dx: -11, dy: -4, w: 22, h: 4 },
+    inspect: 'bell_found',
+    lights: [
+      // Warmer than the stones ever were, and it should be the only thing in
+      // the frame you can see from across the pond at night.
+      { dx: 0, dy: -12, radius: 40, color: '#ffd884', intensity: 0.7, flickerAmount: 0.3, nightOnly: true },
+    ],
+  };
+
+  const lifted = sprite(STONE_LIFTED, 11, 17);
+  defs.stoneLifted = {
+    id: 'stoneLifted',
+    layers: [{ sprite: lifted, dx: -11, dy: -17, sway: 0 }],
+    collider: { dx: -10, dy: -4, w: 20, h: 4 },
+    inspect: 'stone_lifted',
+  };
 
   const board = sprite(PROJECT_BOARD, 12, 23);
   defs.projectBoard = {

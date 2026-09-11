@@ -27,7 +27,7 @@ import type { Slot } from './inventory.ts';
 import type { Sky } from './weather.ts';
 import type { PropChange } from '../world/props.ts';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 const KEY = 'mosshollow.save';
 /** Where version 1 lived. Read once, migrated, and then left alone. */
 const LEGACY_KEY = 'mosshollow.save.v1';
@@ -60,6 +60,11 @@ export interface SaveData {
    * about world state, and it means this block has nothing to desync from.
    */
   npcs: Record<string, NpcSave>;
+  /**
+   * Beats of the valley's one long question that have landed. Absent in every
+   * file older than version 4, which simply means the thread has not started.
+   */
+  story: string[];
 }
 
 export interface NpcSave {
@@ -229,6 +234,7 @@ export function read(): SaveData | null {
     },
     areas: readAreas(root, version),
     npcs: readNpcs(root),
+    story: arr(root.story).filter((k): k is string => typeof k === 'string').slice(0, 64),
     seen: arr(root.seen).filter((k): k is string => typeof k === 'string'),
     projects: arr(root.projects).filter((k): k is string => typeof k === 'string'),
   };

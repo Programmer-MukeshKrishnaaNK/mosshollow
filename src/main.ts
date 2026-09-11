@@ -37,6 +37,7 @@ import { Dialogue } from './systems/dialogue.ts';
 import { resolveInspect } from './data/inspect.ts';
 import { resolveTalk, bark as barkFor, type TalkCtx } from './data/talk.ts';
 import { TalkBook, Village } from './systems/village.ts';
+import { Story, type Beat } from './systems/story.ts';
 import { Barks } from './ui/bark.ts';
 import type { Npc } from './entities/npc.ts';
 import * as Save from './systems/save.ts';
@@ -74,6 +75,7 @@ class Game {
   private worlds = new Map<string, World>();
   private villages = new Map<string, Village>();
   private talk = new TalkBook();
+  private story = new Story();
   private barks = new Barks();
   /** Who a bark has already been spent on today, so it is a greeting not a loop. */
   private barked = new Set<string>();
@@ -164,6 +166,8 @@ class Game {
       if (document.visibilityState === 'hidden') this.saveGame(false);
     });
 
+    this.projects.bindStory(this.story);
+
     this.playerDrawable = {
       sortY: this.player.y,
       shadowX: this.player.x,
@@ -246,6 +250,8 @@ class Game {
           })) : [];
         },
         talkTarget: () => (this.talkTarget ? this.talkTarget.def.id : null),
+        story: () => ({ beats: this.story.list, depth: this.story.depth }),
+        markBeat: (b: string) => this.story.mark(b as Beat),
         talkState: () => this.talk.serialize(),
         speakTo: (id: string) => {
           const v = this.villages.get(this.areaId);
@@ -343,6 +349,7 @@ class Game {
     const st = this.talk.get(id);
     return {
       seen: this.seen,
+      story: new Set(this.story.list),
       done: new Set(this.projects.doneList),
       day: this.clock.day,
       phase: this.clock.phase,
@@ -396,6 +403,9 @@ class Game {
     p.lookAt(this.player.x, this.player.y);
     this.dialogue.say(res.lines);
     if (res.unlock) st.topics.add(res.unlock);
+    // A conversation can move the thread on. Nothing announces it; the world
+    // simply lets you do something next that it did not before.
+    if (res.beat) this.story.mark(res.beat as Beat);
     st.met = true;
     st.lastDay = this.clock.day;
     this.audio.blip(2.4, 0.05);
@@ -447,8 +457,14 @@ class Game {
       return;
     }
     this.applyEffects(p);
+    this.projectBeat(p);
     this.buildCelebration(p);
     this.saveGame(false);
+  }
+
+  /** Some projects are story beats. Lifting the stone is the only one so far. */
+  private projectBeat(p: ProjectDef): void {
+    if (p.id === 'lift_stone') this.story.mark('stone_lifted');
   }
 
   private buildCelebration(p: ProjectDef): void {
@@ -536,6 +552,7 @@ class Game {
       seen: [...this.seen],
       projects: this.projects.doneList,
       npcs: this.talk.serialize(),
+      story: this.story.list,
     });
     if (announce) this.toast.show(ok ? 'saved' : 'could not save');
   }
@@ -577,6 +594,7 @@ class Game {
     // reflected in every world the save knew about.
     this.projects.restore(data.projects);
     this.talk.restore(data.npcs, data.clock.day);
+    this.story.restore(data.story);
     for (const id of this.worlds.keys()) this.applyProjectsFor(id);
     this.camera.snapTo(this.player.x, this.player.focusY);
     return true;
@@ -722,6 +740,9 @@ class Game {
       if (lines) {
         this.dialogue.say(lines);
         this.seen.add(this.lookTarget.key);
+        // Reading the slate is the beat, not lifting the stone. You have to
+        // actually look at what you found.
+        if (this.lookTarget.key === 'bell_found') this.story.mark('the_note');
         this.audio.blip(2, 0.04);
         return;
       }

@@ -24,6 +24,8 @@ import type { Phase } from '../systems/time.ts';
 import type { Sky } from '../systems/weather.ts';
 
 export interface TalkCtx {
+  /** Story beats that have landed. Phase 7's thread runs on these. */
+  story: ReadonlySet<string>;
   /** Inspect keys read. */
   seen: ReadonlySet<string>;
   /** Finished projects. */
@@ -40,6 +42,8 @@ export interface TalkResult {
   lines: readonly (DialogueLine | string)[];
   /** Remembered once delivered, so it is never offered as news twice. */
   unlock?: string;
+  /** A story beat this conversation lands. */
+  beat?: string;
 }
 
 const say = (speaker: string, ...text: string[]): DialogueLine[] =>
@@ -75,6 +79,26 @@ function nan(c: TalkCtx): TalkResult {
         'That is the part I will talk about.',
       ),
       unlock: 'bells',
+      beat: 'nan_bells',
+    };
+  }
+
+  // The end of the thread. She has been waiting to be asked by somebody who
+  // already knew, and now somebody does.
+  if (c.story.has('the_note') && !c.topics.has('answer')) {
+    return {
+      lines: say(NAN,
+        'You have it, then.',
+        'Do not hold it out to me. I know what it looks like. I carried two of them down that hill myself and my hands remember the weight better than my head remembers the year.',
+        'You want to know who asked.',
+        'The house with the boards on it. That is whose step I sweep, and now you know why I do not make a speech about it.',
+        'They did not explain and we did not require it. That is what a valley is — you are owed an explanation by nobody you trust.',
+        'They went in the spring and they did not come back, and eleven years later a girl who was five then walks past that door every day and has never once asked me about it.',
+        'So. You have your answer and it is a smaller one than you wanted.',
+        'They are all smaller than you wanted. Go home, it is getting dark.',
+      ),
+      unlock: 'answer',
+      beat: 'nan_answer',
     };
   }
 
@@ -164,6 +188,24 @@ function rue(c: TalkCtx): TalkResult {
     };
   }
 
+  // She is the only one who could possibly know this, and the reason she knows
+  // it is the reason she is desperate to leave.
+  if (c.story.has('orrin_cradles') && !c.topics.has('place')) {
+    return {
+      lines: say(RUE,
+        'Orrin has been talking. He never talks.',
+        'A night\'s walk there and back, carrying. I can save you the trouble — I have done every inch of that and I did it out of boredom, which is a better motive than yours.',
+        'The ruin, the outcrop, the grove, both banks of the beck, under the dock, the well. I have been down the well. Do not tell Nan.',
+        'There is exactly one place in this valley I have never got into, and it is not a place, it is a stone.',
+        'The flat one at the water\'s edge by your farm. The warm one.',
+        'I have had a crowbar under that stone and I have had Orrin\'s brother-in-law under that stone and it does not move. Nobody has ever moved it.',
+        'You have a whole workshop up there now, though. Haven\'t you.',
+      ),
+      unlock: 'place',
+      beat: 'rue_place',
+    };
+  }
+
   if (c.sky === 'rain') {
     return {
       lines: say(RUE,
@@ -208,6 +250,23 @@ function orrin(c: TalkCtx): TalkResult {
         'Come to me before you do the next one and I will show you a lap joint. It takes four more minutes and it lasts forty more years.',
       ),
       unlock: 'porch',
+    };
+  }
+
+  // He cannot tell you this until Nan has told you there were bells at all,
+  // because otherwise it is a man describing some boxes.
+  if (c.story.has('nan_bells') && !c.topics.has('cradles')) {
+    return {
+      lines: say(ORRIN,
+        'Nan told you about the bells. I can see it on you.',
+        'Then you may as well have my half. I built the cradles they came down in. Eleven of them, two spare, ash and rope, and I was twenty-nine and very proud of them.',
+        'Here is the thing I have never said out loud, because there was never anybody to say it to who would follow it.',
+        'They were cradles. For carrying. Shoulder poles, four men to a bell. If you were putting them on a cart you would not want a cradle, you would want a crate, and I could have built crates in half the time.',
+        'Nobody ordered crates.',
+        'So they went somewhere four men could carry them to and back before it got light. That is not far. That is *here*.',
+      ),
+      unlock: 'cradles',
+      beat: 'orrin_cradles',
     };
   }
 
