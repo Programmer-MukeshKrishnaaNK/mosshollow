@@ -826,29 +826,56 @@ export class World {
   isWater = (x: number, y: number): boolean => this.map.matAtPixel(x, y) === Mat.Water;
 
   /**
-   * How much open water is within earshot, 0..1. Sampled on a coarse ring
-   * rather than a full radius scan — this only has to drive a volume.
+   * How loud the water should be from here, 0..1, from the distance to the
+   * nearest open water.
+   *
+   * This used to sample a coarse ring and weight the hits, which saturated
+   * almost immediately — a single water tile anywhere in the inner ring
+   * returned a fifth of full level, and the value barely changed as the player
+   * walked. Distance to the nearest water tile is both cheaper to reason about
+   * and what the ear actually responds to.
+   *
+   * The radii are in tiles. Three is close enough to be standing on the bank
+   * or out on the dock; eleven is roughly a third of the screen's width at the
+   * usual view size, which is about as far as running water carries before it
+   * stops being something you are near and becomes something you can hear.
+   * Between them the curve is a smoothstep, so there is no edge to cross and
+   * no step to hear.
    */
   waterProximity(x: number, y: number): number {
-    let hits = 0;
-    let total = 0;
-    for (let r = 1; r <= 5; r++) {
-      for (let a = 0; a < 8; a++) {
-        const ang = (a / 8) * TAU + r * 0.4;
-        const tx = Math.floor(x / TILE + Math.cos(ang) * r * 1.6);
-        const ty = Math.floor(y / TILE + Math.sin(ang) * r * 1.6);
-        total++;
-        // Nearer rings count for more.
-        if (this.map.matAt(tx, ty) === Mat.Water) hits += 1 / r;
+    const px = x / TILE;
+    const py = y / TILE;
+    const cx = Math.floor(px);
+    const cy = Math.floor(py);
+    const R = WATER_OUTER;
+    let best = Infinity;
+    for (let dy = -R; dy <= R; dy++) {
+      const ty = cy + dy;
+      for (let dx = -R; dx <= R; dx++) {
+        if (dx * dx + dy * dy > R * R) continue;
+        if (this.map.matAt(cx + dx, ty) !== Mat.Water) continue;
+        const d = Math.hypot(cx + dx + 0.5 - px, ty + 0.5 - py);
+        if (d < best) {
+          best = d;
+          // Nothing closer is possible once we are inside the flat part.
+          if (best <= WATER_INNER) return 1;
+        }
       }
     }
-    return Math.min(1, (hits / (total * 0.12)));
+    if (best >= R) return 0;
+    const t = 1 - (best - WATER_INNER) / (WATER_OUTER - WATER_INNER);
+    return t * t * (3 - 2 * t);
   }
 
   get spawn(): { x: number; y: number } {
     return { x: this.data.spawn.tx * TILE, y: this.data.spawn.ty * TILE };
   }
 }
+
+/** Full water ambience at or inside this many tiles. */
+const WATER_INNER = 3;
+/** Silent at or beyond this many tiles. */
+const WATER_OUTER = 11;
 
 /** A blocking rectangle and, for props, the thing that put it there. */
 interface Collider {

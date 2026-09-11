@@ -23,6 +23,25 @@ import { clamp } from '../core/math.ts';
 
 export type Ground = 'grass' | 'dirt' | 'stone' | 'wood' | 'soil';
 
+/**
+ * Level of the water ambience when the player is right beside it. It sits under
+ * the soundtrack, the weather and every interaction sound on purpose: this is
+ * something you should notice because you walked to the water, not something
+ * you have to listen past.
+ *
+ * Set by measuring each source on its own at the master bus, which is the only
+ * way to get a reproducible number here — comparing full-mix levels is useless
+ * because the wind alone swings the bed by about ten decibels.
+ *
+ * The old figure of 0.055 was written for a signal the broken LFO was inflating
+ * tenfold. With the routing fixed it measured -39 dBFS at the water's edge,
+ * which is *below* the valley's own floor of birds and crickets — quieter than
+ * the incidental sound, and effectively inaudible. This puts the shore level
+ * with the wind and about five decibels under the soundtrack: something you
+ * can hear when you are standing on the bank, and never something competing.
+ */
+const WATER_LEVEL = 0.105;
+
 export interface AudioState {
   /** -1..1 from the weather system. */
   wind: number;
@@ -154,20 +173,35 @@ export class GameAudio {
     rainSrc.start();
 
     // --- water: slow, low, and modulated so it laps rather than hisses.
+    //
+    // Two stages, and the split matters. `lap` carries the shore's rhythm and
+    // `waterGain` carries the distance to it; the signal passes through both,
+    // so the two multiply.
+    //
+    // They used to be one node: the LFO was connected straight to
+    // `waterGain.gain`. Modulation of an AudioParam is *added* to its value, so
+    // the effective gain was (distance * 0.05) + 0.5*sin(t) — a swing ten times
+    // larger than anything proximity could contribute. The shore therefore
+    // played at close to full depth wherever the player was standing, and
+    // walking to the pond changed the level by a few per cent. That is why it
+    // sounded like permanent background noise instead of like water.
     const waterSrc = loopNoise(ctx, this.noise);
     this.waterFilter = ctx.createBiquadFilter();
     this.waterFilter.type = 'lowpass';
     this.waterFilter.frequency.value = 700;
+    const lap = ctx.createGain();
+    lap.gain.value = 1;
     this.waterGain = ctx.createGain();
     this.waterGain.gain.value = 0;
-    waterSrc.connect(this.waterFilter).connect(this.waterGain).connect(this.ambienceBus);
+    waterSrc.connect(this.waterFilter).connect(lap).connect(this.waterGain).connect(this.ambienceBus);
     waterSrc.start();
-    // A slow LFO on the water gain gives the shore its rhythm.
+    // The rhythm rides on `lap`, centred on one, so it shapes the sound without
+    // ever deciding how loud it is.
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.24;
     const lfoDepth = ctx.createGain();
-    lfoDepth.gain.value = 0.5;
-    lfo.connect(lfoDepth).connect(this.waterGain.gain);
+    lfoDepth.gain.value = 0.35;
+    lfo.connect(lfoDepth).connect(lap.gain);
     lfo.start();
 
     this.started = true;
@@ -228,8 +262,17 @@ export class GameAudio {
     this.rainGain.gain.setTargetAtTime(s.rain * 0.17, t, 0.8);
     this.rainFilter.frequency.setTargetAtTime(2600 + s.rain * 2600, t, 0.8);
 
-    // The LFO swings around this value, so keep it as the midpoint.
-    this.waterGain.gain.setTargetAtTime(s.water * 0.05, t, 0.6);
+    // One continuous loop whose level follows the distance to the nearest
+    // water. It is never started or stopped — crossing the audible boundary is
+    // a ramp on a node that has been running since the game began, so there is
+    // nothing to click, restart or duplicate.
+    //
+    // Asymmetric: arriving at the water is a little quicker than leaving it,
+    // which is how approaching a sound actually feels and which stops the level
+    // pumping if the player walks the boundary.
+    const water = s.water * WATER_LEVEL;
+    const rising = water > this.waterGain.gain.value;
+    this.waterGain.gain.setTargetAtTime(water, t, rising ? 0.5 : 0.95);
 
     // --- birds by day, crickets after dark -------------------------------
     this.birdTimer -= dt;
