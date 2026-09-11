@@ -112,6 +112,12 @@ export class Ledger {
     this.scroll = 0;
   }
 
+  /** The panel's footprint including its tabs, in game pixels. */
+  panelRect(viewW: number): { x: number; y: number; w: number; h: number } {
+    layout(viewW);
+    return { x: PANEL.x, y: PANEL.y - TAB_H, w: PANEL.w, h: PANEL.h + TAB_H };
+  }
+
   hide(inv: Inventory): void {
     // Anything in hand goes back where it came from rather than vanishing.
     this.returnHeld(inv);
@@ -136,19 +142,6 @@ export class Ledger {
     this.anim += (target - this.anim) * Math.min(1, (this.open ? 16 : 12) * dt);
     if (this.flashT > 0) this.flashT -= dt;
     if (!this.open) return;
-
-    // A tap on the world outside the panel closes it. On a phone there is no
-    // Escape key, and the alternative is hunting for a close button that would
-    // have to sit somewhere in this layout and earn its space.
-    if (
-      pointer.kind === 'touch' &&
-      pointer.released &&
-      !pointer.over(PANEL.x, PANEL.y - TAB_H, PANEL.w, PANEL.h + TAB_H) &&
-      !this.held
-    ) {
-      hooks.onClose();
-      return;
-    }
 
     // --- tabs ---------------------------------------------------------------
     for (let i = 0; i < TABS.length; i++) {

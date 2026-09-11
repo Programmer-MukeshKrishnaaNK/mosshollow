@@ -42,7 +42,10 @@ import { Story, type Beat } from './systems/story.ts';
 import { Barks } from './ui/bark.ts';
 import type { Npc } from './entities/npc.ts';
 import * as Save from './systems/save.ts';
-import { Music } from './systems/music.ts';
+import { Soundtrack } from './systems/soundtrack.ts';
+
+/** Served from `public/`, so the four megabytes are streamed and not inlined. */
+const MUSIC_URL = `${import.meta.env.BASE_URL}music/where-the-valley-sleeps.mp3`;
 import { FX, Particles } from './systems/particles.ts';
 import { TimeOfDay } from './systems/time.ts';
 import { Weather } from './systems/weather.ts';
@@ -69,7 +72,14 @@ class Game {
   private clouds: CloudShadows;
   private rain!: Rain;
   private audio = new GameAudio();
-  private music = new Music();
+  /**
+   * The composed soundtrack. It replaces the generated pentatonic score from
+   * Phase 2 rather than joining it — two pieces of music at once is not a mix,
+   * it is an argument. `systems/music.ts` is left in the tree because it is
+   * real work and the generator still runs the valley's ambience decisions,
+   * but nothing attaches it any more.
+   */
+  private music = new Soundtrack();
   /** Sampled a few times a second, not per frame — it only drives a volume. */
   private waterNearness = 0;
   private waterSampleTimer = 0;
@@ -1083,6 +1093,24 @@ class Game {
       this.syncFreeze();
       this.ledger.update(dt, this.input, this.pointer, this.ledgerHooks(), this.vw);
       if (this.input.wasPressed('menu') || this.input.wasPressed('ledger')) this.closeLedger();
+      // A tap on the world outside the panel also closes it, because a phone
+      // has no Escape key. It is arbitrated here rather than inside the panel
+      // because only this level can see *where the press began*: releasing a
+      // finger from the BAG button lands outside the panel, and judging that
+      // by the release point alone meant the button closed the satchel it had
+      // just opened.
+      else if (
+        this.pointer.kind === 'touch' &&
+        this.pointer.released &&
+        !this.ledger.carrying &&
+        !this.touch.consumes(this.pointer.pressX, this.pointer.pressY)
+      ) {
+        const r = this.ledger.panelRect(this.vw);
+        const startedOutside =
+          this.pointer.pressX < r.x || this.pointer.pressX >= r.x + r.w ||
+          this.pointer.pressY < r.y || this.pointer.pressY >= r.y + r.h;
+        if (startedOutside) this.closeLedger();
+      }
       this.updateHudFade(dt);
       this.input.endFrame();
       this.pointer.endFrame();
@@ -1092,13 +1120,22 @@ class Game {
 
     // Browsers will not let audio start without a gesture, so the first key
     // press is what brings the valley's sound up.
+    // Browsers will not let audio start until the player has actually done
+    // something. This is that moment, and it happens once.
     if (this.input.anyInputYet && !this.audio.running) {
       this.audio.start();
       const ctx = this.audio.context;
       const dest = this.audio.musicDestination;
-      if (ctx && dest) this.music.attach(ctx, dest);
+      if (ctx && dest) {
+        this.music.attach(ctx, dest);
+        // Decode is asynchronous and four megabytes; the valley plays without
+        // it until it arrives rather than waiting on it.
+        void this.music.load(MUSIC_URL, ctx).then(() => this.music.start());
+      }
     }
     this.audio.resume();
+    // If the file finished decoding after the first gesture, this picks it up.
+    if (this.audio.running && this.music.loaded && !this.music.running) this.music.start();
 
     if (this.input.wasPressed('ledger') && !this.dialogue.blocking && !this.transition.active) {
       this.openLedger('items');
@@ -1234,7 +1271,6 @@ class Game {
       this.waterSampleTimer = 0.3;
       this.waterNearness = this.world.waterProximity(this.player.x, this.player.y);
     }
-    this.music.update(this.clock.darkness, this.weather.rain, this.title.dismissed ? 1 : 0.4);
     this.camera.follow(this.player.x, this.player.focusY, this.player.vx, this.player.vy, dt);
 
     this.playerDrawable.sortY = this.player.y;

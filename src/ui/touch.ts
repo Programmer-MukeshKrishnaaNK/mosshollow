@@ -56,6 +56,12 @@ export class TouchControls {
   private knobY = 0;
   /** Buttons currently held down, by pointerId, so a slide-off releases them. */
   private heldBy = new Map<number, Action>();
+  /**
+   * Decays after a button activates. A correctly-handled tap holds for a single
+   * frame, which is far too short to see, so the press has to leave a mark
+   * behind it or the button looks like it did nothing.
+   */
+  private flash = new Map<Action, number>();
   private buttons: TouchButton[] = [];
   private viewW = 480;
   private viewH = 270;
@@ -118,6 +124,11 @@ export class TouchControls {
     this.enabled = pointer.touchUsed;
     const target = this.enabled ? 1 : 0;
     this.alpha += (target - this.alpha) * Math.min(1, dt * 7);
+    for (const [a, v] of this.flash) {
+      const next = v - dt * 5.2;
+      if (next <= 0) this.flash.delete(a);
+      else this.flash.set(a, next);
+    }
     if (!this.enabled) {
       input.stickX = 0;
       input.stickY = 0;
@@ -131,6 +142,7 @@ export class TouchControls {
       const b = this.buttonAt(t.startX, t.startY);
       if (b) {
         this.heldBy.set(t.id, b.action);
+        this.flash.set(b.action, 1);
         continue;
       }
       if (this.stickId === null && this.inStickZone(t.startX, t.startY)) {
@@ -214,9 +226,13 @@ export class TouchControls {
 
     for (const b of this.buttons) {
       const held = [...this.heldBy.values()].includes(b.action);
-      disc(ctx, b.x, b.y, b.r, held ? PALETTE.cream0 : PALETTE.ink, held ? 0.5 : 0.34);
-      ring(ctx, b.x, b.y, b.r, PALETTE.cream0, held ? 0.9 : 0.44);
-      label(ctx, b.label, b.x, b.y, held ? PALETTE.ink : PALETTE.cream0, held ? 0.95 : 0.6);
+      const lit = Math.max(held ? 1 : 0, this.flash.get(b.action) ?? 0);
+      // The ring swells very slightly as it lights, which is what makes a tap
+      // read as a press rather than as a colour change.
+      const r = b.r + Math.round(lit * 1.6);
+      disc(ctx, b.x, b.y, r, lit > 0.02 ? PALETTE.cream0 : PALETTE.ink, 0.34 + lit * 0.3);
+      ring(ctx, b.x, b.y, r, PALETTE.cream0, 0.44 + lit * 0.46);
+      label(ctx, b.label, b.x, b.y, lit > 0.5 ? PALETTE.ink : PALETTE.cream0, 0.6 + lit * 0.35);
     }
     ctx.globalAlpha = prev;
   }

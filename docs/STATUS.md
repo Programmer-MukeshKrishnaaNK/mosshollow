@@ -109,6 +109,12 @@ bucket. It is now built.
   follow it without a journal then the writing is wrong and a journal would
   only hide that. It ends with an answer to the human question and one
   instruction nobody has had to obey
+- The soundtrack: "Where the Valley Sleeps", 2:47, played as recorded and
+  looped by crossfading the piece into itself. It is not a seamless loop and was
+  never meant to be — measured, it has 51 ms of silence at the head, 1449 ms at
+  the tail, and it fades out — so two sources share one decoded buffer and the
+  next pass begins while the previous is still fading. Nothing is trimmed,
+  re-encoded or edited. One decode, one playback, for the life of the page
 - One authoritative viewport (`core/viewport.ts`) driving the render surfaces,
   the camera, every panel and every pointer transform. Logical height is fixed
   at 270; logical width flexes with the display's shape, so a wide screen gets
@@ -124,6 +130,13 @@ bucket. It is now built.
   item on the deferred list from Phase 1
 - Debug overlay, art sheet (6 pages incl. an animation filmstrip and the NPC
   silhouette gate), deterministic dev stepper with pause/resume
+
+**Measured after Phase 9.1:** 7.3 ms/frame in the homestead and 10.3 in Bell
+Row with all three residents and the soundtrack playing, 10.6 in rain, against
+a 16.7 ms budget. The view is 1.0x to 1.47x the reference area depending on the
+display. Audio at the master bus: soundtrack -23.7 dBFS against an ambience bed
+of -25.0, nothing above -0.3 peak, dialogue ducks the music 4.8 dB and the
+pause menu ducks it 6.7 dB.
 
 **Measured after Phase 9:** 6.1 ms/frame in the homestead, 6.3 in Bell Row
 with all three residents, 6.5 in rain, 7.7 with the satchel open, 8.5 at a
@@ -217,9 +230,14 @@ not belong in this game); procedural cave levels (scope).
 
 ## Design decisions worth remembering
 
-- **No external assets, ever.** Everything is authored as pixel maps or
-  generated from the shared shading model. It keeps the look coherent and the
-  repository self-contained.
+- **No external assets — with one deliberate exception.** Every pixel in the
+  game is still authored as a pixel map or generated from the shared shading
+  model, and every sound effect and the whole ambience bed is still synthesised
+  at runtime. The one exception is the soundtrack: "Where the Valley Sleeps" is
+  a composed piece written for this game and it is played as recorded, from
+  `public/music/`. Synthesising a substitute would have been the wrong kind of
+  purity — the rule existed to keep the look coherent, not to refuse the
+  composer.
 - **Terrain as fields, not tiles.** Costs a one-off bake at load and removes
   the two things that make tile-based ground look cheap: visible repetition and
   right-angled material boundaries.
@@ -361,6 +379,24 @@ not belong in this game); procedural cave levels (scope).
 - **A duck you cannot hear is not a duck, and one you cannot hear past is a
   fault.** Measured at 13% and then at 85% before settling near 60%: the
   weather should step back, not disappear.
+- **Spare screen buys more view, never more magnification.** The first
+  responsive pass filled the window by letting the scale absorb everything the
+  display had spare, which on a 1366x768 laptop made the character 1.42x larger
+  and showed no more of the valley at all; on a 1024x768 display it showed
+  *less*. The scale is now chosen first, as the largest whole number that still
+  fits the reference view, and the logical size grows into the remainder.
+- **The view is clamped by the frame budget as well as by the map.** At
+  560x340 the view is half as large again as the reference and the frame costs
+  10.3 ms; at 608x384 it cost 14.4 ms, which is not enough headroom on a
+  machine slower than this one.
+- **A tap that begins and ends between two frames is still a tap.** Deleting a
+  touch contact the moment the finger lifted meant a quick tap was discarded
+  entirely and the player learned that the button needed holding. A contact no
+  frame has seen yet now survives exactly one update.
+- **A button press must not be judged by where the finger came up.** Releasing
+  from the BAG button lands outside the satchel panel, so the outside-tap close
+  fired on the same gesture that opened it. The press origin decides, and the
+  touch controls get first refusal on it.
 - **`touch-action: none`, or the phone eats the drag.** Without it the browser
   claims a finger drag as a pan gesture and fires `pointercancel` part-way
   through, and the thumbstick loses tracking the moment it starts working. This

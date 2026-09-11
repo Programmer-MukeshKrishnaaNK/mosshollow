@@ -30,67 +30,91 @@
  * and an ultrawide monitor cannot see past the edge of the world.
  */
 
-/** The reference. A character is this fraction of a 16:9 screen's height. */
+/**
+ * The reference view. Everything is authored against this and it is the size
+ * the game is played at on a 1080p screen.
+ */
+export const LOGICAL_W = 480;
 export const LOGICAL_H = 270;
-/** The 16:9 reference. At this aspect nothing changes from how it always was. */
-export const REFERENCE_W = 480;
-const MIN_W = 384;
-const MAX_W = 608;
+/** Kept for callers that want the reference width by name. */
+export const REFERENCE_W = LOGICAL_W;
 /**
- * The logical height may grow on displays that are taller than 16:9 so a 4:3
- * monitor fills completely instead of banding. Capped well under the shortest
- * map in the game (Bell Row, 448px) so the camera always has room to clamp.
+ * How far the view may open up.
+ *
+ * Two limits decide these. They are held under the smallest map in the game —
+ * Bell Row is 640x448 — so the camera always has somewhere to clamp and a large
+ * monitor can never see past the edge of the world. And they are held where the
+ * frame budget is comfortable: every logical pixel is one more to light, rain
+ * on and composite, and at 608x384 the frame cost measured 14.4 ms against a
+ * 16.7 ms budget, which is not enough headroom for a machine slower than this
+ * one. At 560x340 the view is still around half as large again as the 480x270
+ * reference and the frame is back under eleven.
  */
-const MAX_H = 360;
-/**
- * Buffer ceiling as a pixel budget rather than a flat multiplier. A flat cap
- * of four left a 1440p desktop being upscaled by the browser — the exact blur
- * this is here to avoid — while still permitting an enormous buffer on an
- * ultrawide. A budget bounds the memory and lets the multiplier go as high as
- * it usefully can on any given shape of screen.
- */
+const MAX_W = 560;
+const MAX_H = 340;
+/** Buffer ceiling as a pixel budget rather than a flat multiplier. */
 const MAX_BUFFER_PX = 9_000_000;
 
 export interface ViewportSize {
-  /** Logical game pixels. The camera, the UI and hit-testing all use these. */
   vw: number;
   vh: number;
-  /** CSS pixels per logical pixel. May be fractional on small displays. */
   scale: number;
-  /** Whole-number multiplier of the backing buffer. */
   store: number;
   cssW: number;
   cssH: number;
   bufW: number;
   bufH: number;
-  /** True when the display is so tall that the game should ask to be turned. */
   portrait: boolean;
 }
 
-const even = (n: number): number => Math.round(n / 2) * 2;
+const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
+const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
+/**
+ * Spare screen is spent on *more view*, never on more magnification.
+ *
+ * This is the correction to the first attempt, which pinned the view near
+ * 480x270 and let the scale absorb whatever the display had spare. That filled
+ * the window, but it filled it by making everything bigger: on a 1366x768
+ * laptop the character grew by a factor of 1.42 and the amount of valley on
+ * screen did not change at all. On a 1024x768 display it actually went *down*.
+ * Filling a screen by magnifying is the opposite of what a wider screen is for.
+ *
+ * So the scale is chosen first, as the largest whole number that still fits the
+ * reference view, and then the logical size grows into whatever is left over.
+ * A character therefore occupies the same fraction of the screen it always did,
+ * and the extra pixels turn into more room to look at.
+ *
+ * Below 2x there is no whole number left worth having — a phone cannot show the
+ * reference view twice over — so there the scale is allowed to be fractional
+ * and the view opens as far as the clamps permit.
+ */
 export function computeViewport(availW: number, availH: number, dpr = 1): ViewportSize {
   const w = Math.max(1, availW);
   const h = Math.max(1, availH);
-  const aspect = w / h;
 
-  // Width flexes with the display's shape: a wide screen gets a wider room
-  // rather than the same room with curtains either side.
-  const vw = Math.min(MAX_W, Math.max(MIN_W, even(LOGICAL_H * aspect)));
-  let vh = LOGICAL_H;
+  let vw: number;
+  let vh: number;
 
-  // If the display is taller than the width allows, spend the slack on height
-  // instead of leaving it as bars. This is what makes 4:3 fill completely.
-  const scaleFromW = w / vw;
-  if (h / vh > scaleFromW) {
-    vh = Math.min(MAX_H, Math.max(LOGICAL_H, even(h / scaleFromW)));
+  const whole = Math.floor(Math.min(w / LOGICAL_W, h / LOGICAL_H));
+  if (whole >= 2) {
+    // Desktop. Keep the crisp whole-number scale the art was drawn for and
+    // let the view open up into the remainder.
+    vw = clamp(even(w / whole), LOGICAL_W, MAX_W);
+    vh = clamp(even(h / whole), LOGICAL_H, MAX_H);
+  } else {
+    // Small screens. Open the view as far as it is allowed, then take whatever
+    // scale that implies rather than leaving the screen half empty.
+    const needed = Math.max(w / MAX_W, h / MAX_H);
+    vw = clamp(even(w / needed), LOGICAL_W, MAX_W);
+    vh = clamp(even(h / needed), LOGICAL_H, MAX_H);
   }
 
   const scale = Math.min(w / vw, h / vh);
 
-  // Cover the device pixels the element actually occupies. Covering and
-  // letting the browser scale down is sharp; falling short and letting it
-  // scale up is the blur. Then pull back if the budget says so.
+  // Cover the device pixels the element actually occupies: covering and letting
+  // the browser scale down is sharp, falling short and letting it scale up is
+  // the blur this exists to remove.
   let store = Math.max(1, Math.ceil(scale * Math.max(1, dpr)));
   while (store > 1 && vw * store * vh * store > MAX_BUFFER_PX) store--;
 
@@ -103,9 +127,7 @@ export function computeViewport(availW: number, availH: number, dpr = 1): Viewpo
     cssH: vh * scale,
     bufW: vw * store,
     bufH: vh * store,
-    // Below this the game is more letterbox than game and asking the player to
-    // turn the phone is honest; the alternative is showing half the map.
-    portrait: aspect < 0.86,
+    portrait: w / h < 0.86,
   };
 }
 

@@ -55,6 +55,22 @@ export class GameAudio {
   private master!: GainNode;
   private musicBus: GainNode | null = null;
   /**
+   * Resting level of the soundtrack bus. "Where the Valley Sleeps" is mastered
+   * to a peak of -0.01 dBFS and an RMS of -14.4, which is a finished record and
+   * far hotter than anything this game synthesises. It has to be brought down
+   * to sit beneath the weather and the footsteps rather than on top of them.
+   * Ducking multiplies this rather than replacing it.
+   *
+   * Set by measurement at the master bus, not by ear: at 0.34 the soundtrack
+   * ran 3.2 dB above the ambience bed, which for a game this quiet is the
+   * music leading rather than accompanying. 0.24 puts it level with the
+   * weather, where it is unmistakably present and still underneath a footstep.
+   */
+  private musicLevel = 0.24;
+
+  /** Player-facing music level, 0..1, on top of the resting level. */
+  musicVolume = 1;
+  /**
    * The player's setting, 0..1. Deferred since Phase 1 and listed as such in
    * the status file every milestone since; a game you cannot turn down is a
    * game people play on mute.
@@ -197,7 +213,12 @@ export class GameAudio {
     this.ambienceBus.gain.setTargetAtTime(duck, t, s.paused ? 0.3 : 0.22);
     // The score goes further down than the weather: a line of dialogue over a
     // melody is a competition, over wind it is a scene.
-    if (this.musicBus) this.musicBus.gain.setTargetAtTime(1 - Math.max((s.duck ?? 0) * 0.85, pause), t, s.paused ? 0.4 : 0.3);
+    if (this.musicBus) {
+      const target = this.musicLevel * this.musicVolume * (1 - Math.max((s.duck ?? 0) * 0.85, pause));
+      // Never to absolute zero: an exponential approach to silence is what
+      // makes a duck breathe rather than gate.
+      this.musicBus.gain.setTargetAtTime(Math.max(0.0001, target), t, s.paused ? 0.4 : 0.3);
+    }
 
     // Wind gets louder and brighter as it picks up. Rain masks it.
     const windLevel = (0.012 + gust * 0.055) * (1 - s.rain * 0.4);
@@ -386,7 +407,7 @@ export class GameAudio {
     if (!this.started || !this.ctx) return null;
     if (!this.musicBus) {
       this.musicBus = this.ctx.createGain();
-      this.musicBus.gain.value = 1;
+      this.musicBus.gain.value = this.musicLevel;
       this.musicBus.connect(this.master);
     }
     return this.musicBus;

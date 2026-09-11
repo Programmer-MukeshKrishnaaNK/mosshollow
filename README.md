@@ -161,6 +161,18 @@ src/
 `docs/ARCHITECTURE.md` goes into the systems; `docs/STATUS.md` is the running
 project log — what works, what's next, what's deliberately postponed.
 
+## Sound
+
+Everything the valley makes — wind, rain, the shore, birds, crickets, footsteps
+keyed to what you are walking on, every tool and every interface click — is
+synthesised at runtime. There are no sound files.
+
+The soundtrack is the exception. **"Where the Valley Sleeps"** was composed for
+this game and is played exactly as recorded. It is not a seamless loop and was
+never meant to be one, so rather than editing the piece to butt-join, it
+crossfades into itself: the next pass begins while the last is still fading.
+One decode, one playback, for as long as the page is open.
+
 ## Art
 
 Sprites are authored as arrays of strings, one character per pixel, drawn from

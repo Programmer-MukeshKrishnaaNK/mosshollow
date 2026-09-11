@@ -28,6 +28,11 @@ export interface Touch {
   startY: number;
   /** True on the frame it began. */
   fresh: boolean;
+  /**
+   * The finger has lifted but no frame has looked at this contact yet, so it
+   * is kept for exactly one update and then dropped.
+   */
+  lifted: boolean;
 }
 
 export class Pointer {
@@ -141,7 +146,7 @@ export class Pointer {
     if (this.kind === 'touch') {
       this.touchUsed = true;
       const p = this.pointAt(ev);
-      this.touches.set(ev.pointerId, { id: ev.pointerId, x: p.x, y: p.y, startX: p.x, startY: p.y, fresh: true });
+      this.touches.set(ev.pointerId, { id: ev.pointerId, x: p.x, y: p.y, startX: p.x, startY: p.y, fresh: true, lifted: false });
     }
     this.toGame(ev);
     this.down = true;
@@ -175,7 +180,14 @@ export class Pointer {
   };
 
   private onUp = (ev: PointerEvent): void => {
-    this.touches.delete(ev.pointerId);
+    const t = this.touches.get(ev.pointerId);
+    // A quick tap can begin and end inside a single gap between animation
+    // frames, and deleting the contact here meant the frame that followed saw
+    // nothing at all: the tap was silently discarded and the player learned
+    // that the button needed holding. If no frame has looked at this contact
+    // yet, it survives one update and is dropped at the end of it.
+    if (t && t.fresh) t.lifted = true;
+    else this.touches.delete(ev.pointerId);
     if (!this.down) return;
     this.toGame(ev);
     this.down = false;
@@ -235,6 +247,9 @@ export class Pointer {
     this.wheel = 0;
     if (this.cancelled) this.cancelCount++;
     this.cancelled = false;
-    for (const t of this.touches.values()) t.fresh = false;
+    for (const t of [...this.touches.values()]) {
+      if (t.lifted) this.touches.delete(t.id);
+      else t.fresh = false;
+    }
   }
 }
