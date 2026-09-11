@@ -12,8 +12,20 @@
 html,
 body {
   height: 100%;
+  /* dvh follows the mobile address bar as it hides and shows. With plain vh
+     the page is sized for the *largest* viewport and the bottom of the game —
+     the hotbar and the action button — sits under the browser chrome. */
+  height: 100dvh;
   background: #16131c;
   overflow: hidden;
+  /* The whole page is a game surface. Without this the browser claims a drag
+     as a pan gesture and fires pointercancel part-way through, which is
+     exactly what stopped the thumbstick from moving the player on a phone. */
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -30,10 +42,31 @@ body {
   line-height: 0;
 }
 
+/* Probe element: the only way to read the notch insets from script is to let
+   CSS resolve env() onto something and then measure it. */
+#safe-probe {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  visibility: hidden;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
 .game-canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   display: block;
+  /* Belt and braces: the canvas is the element a finger actually lands on. */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   /* Grounds the picture without competing with it. */
   box-shadow:
     0 0 0 1px #0d0b11,

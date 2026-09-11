@@ -23,7 +23,7 @@ const GAP = 2;
  * grow with it, which costs width the layout has to spare and buys a target a
  * thumb can actually hit without looking.
  */
-const TOUCH_SLOT = 26;
+const TOUCH_SLOT = 28;
 const TOUCH_GAP = 3;
 
 export class Hotbar {

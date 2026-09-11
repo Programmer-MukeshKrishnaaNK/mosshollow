@@ -58,6 +58,7 @@ export class DebugOverlay {
     clock: TimeOfDay,
     weather: Weather,
     particles: Particles,
+    viewW = 480,
   ): void {
     if (!this.enabled) return;
     const lines = [
@@ -72,11 +73,11 @@ export class DebugOverlay {
     const w = 152;
     ctx.globalAlpha = 0.72;
     ctx.fillStyle = PALETTE.inkCool;
-    ctx.fillRect(480 - w - 4, 4, w, lines.length * 9 + 6);
+    ctx.fillRect(viewW - w - 4, 4, w, lines.length * 9 + 6);
     ctx.globalAlpha = 1;
     lines.forEach((line, i) => {
-      drawText(ctx, line, 480 - w, 8 + i * 9, PALETTE.fol1);
+      drawText(ctx, line, viewW - w, 8 + i * 9, PALETTE.fol1);
     });
-    if (this.showCollision) drawText(ctx, 'collision', 480 - w, 8 + lines.length * 9, PALETTE.orange);
+    if (this.showCollision) drawText(ctx, 'collision', viewW - w, 8 + lines.length * 9, PALETTE.orange);
   }
 }

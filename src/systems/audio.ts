@@ -32,8 +32,15 @@ export interface AudioState {
   rain: number;
   /** 0..1, how close the listener is to open water. */
   water: number;
-  /** Master mute, e.g. while a menu is open. */
+  /** Master mute. */
   muted?: boolean;
+  /**
+   * The pause menu is up. The valley does not stop existing, but it stops
+   * competing: the bed drops well back so the menu feels like a step outside
+   * the game rather than the game continuing without you. A hard cut to
+   * silence reads as a fault, so this is a duck and not a mute.
+   */
+  paused?: boolean;
   /**
    * 0..1. How far to pull the *ambience and music* down without touching the
    * sound effects — used while somebody is talking. A conversation in a valley
@@ -154,6 +161,22 @@ export class GameAudio {
     if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
+  /**
+   * Stop making noise into a tab nobody is looking at. Browsers throttle a
+   * hidden tab's timers but not its audio graph, so without this the valley
+   * carries on in the background — which on a phone means it carries on while
+   * somebody is reading a message.
+   */
+  setPageVisible(visible: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.started) return;
+    if (visible) {
+      if (ctx.state === 'suspended') void ctx.resume();
+    } else if (ctx.state === 'running') {
+      void ctx.suspend();
+    }
+  }
+
   update(dt: number, s: AudioState): void {
     if (!this.ctx || !this.started) return;
     const t = this.ctx.currentTime;
@@ -167,11 +190,14 @@ export class GameAudio {
     // audible only to a meter; at 0.85 the valley vanished, which reads as the
     // sound having broken rather than as somebody speaking. This sits near
     // sixty percent: the weather is still there, it has just stepped back.
-    const duck = 1 - (s.duck ?? 0) * 0.6;
-    this.ambienceBus.gain.setTargetAtTime(duck, t, 0.22);
+    // Pause ducks harder than dialogue and settles more slowly, so opening the
+    // menu feels like stepping back rather than like the sound breaking.
+    const pause = s.paused ? 0.72 : 0;
+    const duck = 1 - Math.max((s.duck ?? 0) * 0.6, pause);
+    this.ambienceBus.gain.setTargetAtTime(duck, t, s.paused ? 0.3 : 0.22);
     // The score goes further down than the weather: a line of dialogue over a
     // melody is a competition, over wind it is a scene.
-    if (this.musicBus) this.musicBus.gain.setTargetAtTime(1 - (s.duck ?? 0) * 0.85, t, 0.3);
+    if (this.musicBus) this.musicBus.gain.setTargetAtTime(1 - Math.max((s.duck ?? 0) * 0.85, pause), t, s.paused ? 0.4 : 0.3);
 
     // Wind gets louder and brighter as it picks up. Rain masks it.
     const windLevel = (0.012 + gust * 0.055) * (1 - s.rain * 0.4);

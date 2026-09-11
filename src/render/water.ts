@@ -35,6 +35,12 @@ export class WaterSurface {
     }
   }
 
+  /** Rebuild only the scratch buffer. The tiling frames are size-independent. */
+  resize(viewW: number, viewH: number, _ctx: CanvasRenderingContext2D): void {
+    this.scratch = makeCanvas(viewW, viewH);
+    this.sctx = ctxOf(this.scratch);
+  }
+
   /**
    * Draw the animated surface into `ctx`, clipped to the baked water mask.
    * `camX/camY` are the integer camera origin in world pixels.

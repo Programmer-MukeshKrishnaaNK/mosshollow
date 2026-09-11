@@ -2,11 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover puts the page under the notch so safe-area insets
+         have something to inset from; user-scalable=no stops a double-tap on the
+         action button from zooming the whole game. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#16131c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Mosshollow</title>
   </head>
   <body>
     <div id="stage"></div>
+    <div id="safe-probe"></div>
     <div id="boot"><span>Mosshollow</span><small>growing the valley…</small></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

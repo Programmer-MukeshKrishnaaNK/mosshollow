@@ -37,16 +37,28 @@ const TABS: { id: LedgerTab; label: string }[] = [
 ];
 
 // --- layout, all in game pixels --------------------------------------------
+// The panel keeps a fixed size — its internal layout is tuned to it — but its
+// x is recomputed from the live viewport so it stays centred on any display.
+// It used to be frozen at the value that happened to centre it on 480.
 const PANEL = { x: 34, y: 22, w: 412, h: 224 };
 const TAB_H = 14;
 const BODY = { x: PANEL.x + 10, y: PANEL.y + TAB_H + 8, w: PANEL.w - 20, h: 132 };
+
+/** Re-centre for the current viewport. Called before anything reads a rect. */
+function layout(viewW: number): void {
+  const x = Math.round((viewW - PANEL.w) / 2);
+  if (x === PANEL.x) return;
+  PANEL.x = x;
+  BODY.x = x + 10;
+  GRID_X = x + Math.round((PANEL.w - GRID_W) / 2);
+}
 const FOOT_Y = PANEL.y + PANEL.h - 56;
 const SLOT = 26;
 const GAP = 3;
 const COLS = 8;
 const ROWS = 4;
 const GRID_W = COLS * SLOT + (COLS - 1) * GAP;
-const GRID_X = PANEL.x + Math.round((PANEL.w - GRID_W) / 2);
+let GRID_X = PANEL.x + Math.round((PANEL.w - GRID_W) / 2);
 const GRID_Y = BODY.y + 12;
 // Six rows of 22 fill the body exactly. Five of 26 left the sixth project
 // reachable by keyboard and invisible to a pointer, which is the worst of
@@ -118,7 +130,8 @@ export class Ledger {
     this.held = null;
   }
 
-  update(dt: number, input: Input, pointer: Pointer, hooks: LedgerHooks): void {
+  update(dt: number, input: Input, pointer: Pointer, hooks: LedgerHooks, viewW = 480): void {
+    layout(viewW);
     const target = this.open ? 1 : 0;
     this.anim += (target - this.anim) * Math.min(1, (this.open ? 16 : 12) * dt);
     if (this.flashT > 0) this.flashT -= dt;
@@ -276,6 +289,7 @@ export class Ledger {
   // --- drawing --------------------------------------------------------------
 
   draw(ctx: CanvasRenderingContext2D, viewW: number, viewH: number, hooks: LedgerHooks, pointer: Pointer, time: number): void {
+    layout(viewW);
     if (this.anim <= 0.01) return;
     const a = this.anim;
     const ease = 1 - (1 - a) * (1 - a);

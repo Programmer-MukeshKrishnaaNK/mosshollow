@@ -101,6 +101,14 @@ export class World {
     this.smokers = this.props.filter((p) => p.def.smoke);
   }
 
+  /**
+   * The window changed shape. Only the water's scratch buffer is view-sized;
+   * the terrain bake is world-sized and the props do not care.
+   */
+  resizeView(viewW: number, viewH: number, ctx: CanvasRenderingContext2D): void {
+    this.water.resize(viewW, viewH, ctx);
+  }
+
   // --- construction ---------------------------------------------------------
 
   private add(defId: string, x: number, y: number, rng: Rng, inspect?: string): void {

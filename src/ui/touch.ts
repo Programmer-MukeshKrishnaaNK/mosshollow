@@ -71,15 +71,25 @@ export class TouchControls {
     this.reserved = r;
   }
 
-  layout(viewW: number, viewH: number): void {
+  layout(viewW: number, viewH: number, inset = { top: 0, right: 0, bottom: 0, left: 0 }): void {
     this.viewW = viewW;
     this.viewH = viewH;
+    // Insets arrive in CSS pixels and the layout is in logical ones, so they
+    // are converted by the caller; what matters here is that nothing ends up
+    // under a home indicator where a press is swallowed by the system.
+    const r = inset.right;
+    const b = inset.bottom;
+    const t = inset.top;
     // The primary action sits under the right thumb; the two smaller ones sit
     // above and inboard of it, where a thumb rolls rather than stretches.
     this.buttons = [
-      { action: 'interact', label: 'E', x: viewW - 40, y: viewH - 42, r: 21 },
-      { action: 'ledger', label: 'BAG', x: viewW - 78, y: viewH - 34, r: 15 },
-      { action: 'menu', label: '||', x: viewW - 20, y: 20, r: 13 },
+      // Radii chosen so that at a typical phone scale every one of these is at
+      // least the 44 CSS pixels both platform guidelines ask for. Measured at
+      // 43, 38 and 41 before this and they were all fractionally too small to
+      // hit without looking.
+      { action: 'interact', label: 'E', x: viewW - 42 - r, y: viewH - 44 - b, r: 22 },
+      { action: 'ledger', label: 'BAG', x: viewW - 84 - r, y: viewH - 34 - b, r: 17 },
+      { action: 'menu', label: '||', x: viewW - 22 - r, y: 22 + t, r: 16 },
     ];
   }
 
@@ -179,10 +189,19 @@ export class TouchControls {
     return this.buttonAt(x, y) !== null || this.inStickZone(x, y);
   }
 
+  /**
+   * Faded back while the dialogue box is up. The box occupies the bottom strip
+   * the action cluster also lives in, and a solid button sitting on a line of
+   * text is the sort of overlap that makes an interface feel unfinished. The
+   * buttons stay live — you still need E to turn the page — they just stop
+   * competing with the words.
+   */
+  dim = 1;
+
   draw(ctx: CanvasRenderingContext2D): void {
     if (this.alpha <= 0.02) return;
     const prev = ctx.globalAlpha;
-    ctx.globalAlpha = prev * this.alpha;
+    ctx.globalAlpha = prev * this.alpha * this.dim;
 
     if (this.stickId !== null) {
       ring(ctx, this.originX, this.originY, STICK_R, PALETTE.cream0, 0.34);

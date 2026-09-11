@@ -54,8 +54,10 @@ then, so a mouse player never sees them.
 | tap a hotbar slot | choose it |
 | tap outside a panel | close it |
 
-The game fills the screen and letterboxes the sides. Both hands work at once:
-you can walk and swing without lifting a thumb.
+The game fills the screen — the view widens or narrows to match your display
+rather than sitting inside bars — and both hands work at once: you can walk and
+swing without lifting a thumb. In portrait it will ask you to turn the phone,
+because the valley reads sideways.
 
 ## What's in it right now
 

@@ -30,6 +30,13 @@ export class Camera {
   ) {}
 
   /** Snap straight to the target — used when entering an area. */
+  /** The window changed shape. Re-clamp so the edge of the map stays the edge. */
+  resize(viewW: number, viewH: number): void {
+    this.viewW = viewW;
+    this.viewH = viewH;
+    this.clampToWorld();
+  }
+
   snapTo(cx: number, cy: number): void {
     this.x = cx - this.viewW / 2;
     this.y = cy - this.viewH / 2;

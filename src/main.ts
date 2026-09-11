@@ -22,7 +22,8 @@ import { Camera } from './render/camera.ts';
 import { CloudShadows } from './render/clouds.ts';
 import { Rain } from './render/rain.ts';
 import { Lighting, type Light } from './render/lighting.ts';
-import { Renderer, VIEW_H, VIEW_W } from './render/renderer.ts';
+import { Renderer } from './render/renderer.ts';
+import { computeViewport, readSafeInsets } from './core/viewport.ts';
 import { GameAudio, type Ground } from './systems/audio.ts';
 import { Farm, type Plot } from './systems/farm.ts';
 import { item, type ToolKind } from './data/items.ts';
@@ -50,7 +51,7 @@ import { Hotbar } from './ui/hotbar.ts';
 import { TouchControls } from './ui/touch.ts';
 import { Ledger } from './ui/ledger.ts';
 import { Menu } from './ui/menu.ts';
-import { Hud, TitleCard, Toast } from './ui/hud.ts';
+import { Hud, TitleCard, Toast, drawRotateHint } from './ui/hud.ts';
 import { drawDialogue } from './ui/dialogueBox.ts';
 import { drawLookHint, drawTarget, type TargetKind } from './ui/target.ts';
 import { drawVignette } from './ui/panel.ts';
@@ -64,9 +65,9 @@ class Game {
   private clock = new TimeOfDay(7.6);
   private weather = new Weather();
   private particles = new Particles();
-  private lighting = new Lighting(VIEW_W + 1, VIEW_H + 1);
+  private lighting!: Lighting;
   private clouds: CloudShadows;
-  private rain = new Rain(VIEW_W + 1, VIEW_H + 1);
+  private rain!: Rain;
   private audio = new GameAudio();
   private music = new Music();
   /** Sampled a few times a second, not per frame — it only drives a volume. */
@@ -88,6 +89,10 @@ class Game {
   private player: Player;
   private camera: Camera;
   private hud = new Hud();
+  /** Live logical size. One source, read everywhere — never a constant. */
+  private get vw(): number { return this.renderer.view.vw; }
+  private get vh(): number { return this.renderer.view.vh; }
+
   private hotbar = new Hotbar();
   private touch = new TouchControls();
   private toast = new Toast();
@@ -132,7 +137,19 @@ class Game {
 
   constructor(container: HTMLElement) {
     this.renderer = new Renderer(container);
-    this.pointer.attach(this.renderer.display, VIEW_W, VIEW_H);
+    this.lighting = new Lighting(this.vw + 1, this.vh + 1);
+    this.rain = new Rain(this.vw + 1, this.vh + 1);
+    this.pointer.attach(this.renderer.display, this.vw, this.vh);
+    // One resize path. Everything holding a buffer or a layout rebuilds here
+    // and nowhere else, so there is no second opinion about how big the game is.
+    this.renderer.onLogicalResize = (v) => {
+      this.lighting = new Lighting(v.vw + 1, v.vh + 1);
+      this.rain = new Rain(v.vw + 1, v.vh + 1);
+      this.pointer.attach(this.renderer.display, v.vw, v.vh);
+      this.layoutTouch();
+      this.camera.resize(v.vw + 1, v.vh + 1);
+      for (const w of this.worlds.values()) w.resizeView(v.vw + 1, v.vh + 1, this.renderer.ctx);
+    };
     this.clouds = new CloudShadows(this.renderer.ctx);
     this.enterAreaData(START_AREA);
 
@@ -152,7 +169,7 @@ class Game {
 
     // The camera has to exist before the save is applied: restoring a game
     // moves the player, and the camera has to be told where they went.
-    this.camera = new Camera(VIEW_W + 1, VIEW_H + 1, this.world.map.pixelW, this.world.map.pixelH);
+    this.camera = new Camera(this.vw + 1, this.vh + 1, this.world.map.pixelW, this.world.map.pixelH);
 
     // ?fresh starts a new valley without touching the existing save, which is
     // what automated checks and a stuck player both need.
@@ -169,7 +186,7 @@ class Game {
     });
 
     this.projects.bindStory(this.story);
-    this.touch.layout(VIEW_W, VIEW_H);
+    this.layoutTouch();
 
     this.playerDrawable = {
       sortY: this.player.y,
@@ -181,6 +198,14 @@ class Game {
 
     // Control comes back when the box has finished closing, not the instant
     // the last line is dismissed — otherwise you walk away mid-animation.
+    document.addEventListener('visibilitychange', () => {
+      const visible = document.visibilityState === 'visible';
+      this.audio.setPageVisible(visible);
+      // Coming back from a background tab, the viewport may have changed shape
+      // while we were not being rendered.
+      if (visible) this.renderer.resize();
+    });
+
     this.loop = new Loop({ update: (dt) => this.update(dt), render: () => this.render() });
     this.loop.start();
 
@@ -253,6 +278,8 @@ class Game {
           })) : [];
         },
         talkTarget: () => (this.talkTarget ? this.talkTarget.def.id : null),
+        viewport: () => this.renderer.view,
+        computeViewport,
         story: () => ({ beats: this.story.list, depth: this.story.depth }),
         markBeat: (b: string) => this.story.mark(b as Beat),
         talkState: () => this.talk.serialize(),
@@ -321,7 +348,7 @@ class Game {
   private ensureArea(id: string): World {
     let world = this.worlds.get(id);
     if (!world) {
-      world = new World(areaData(id), this.renderer.ctx, VIEW_W + 1, VIEW_H + 1);
+      world = new World(areaData(id), this.renderer.ctx, this.vw + 1, this.vh + 1);
       this.worlds.set(id, world);
       this.farms.set(id, new Farm(world.map));
       this.dropPools.set(id, new Pickups());
@@ -631,6 +658,20 @@ class Game {
       water: this.waterNearness,
       // Silence under a line is worth more than ambience over it.
       duck: this.dialogue.open,
+      paused: this.menu.active,
+    });
+  }
+
+  /** Re-place the touch controls for the current viewport and notch insets. */
+  private layoutTouch(): void {
+    const css = readSafeInsets();
+    const s = Math.max(0.0001, this.renderer.view.scale);
+    // Insets are CSS pixels; the layout is logical, so divide by the scale.
+    this.touch.layout(this.vw, this.vh, {
+      top: Math.round(css.top / s),
+      right: Math.round(css.right / s),
+      bottom: Math.round(css.bottom / s),
+      left: Math.round(css.left / s),
     });
   }
 
@@ -1017,7 +1058,7 @@ class Game {
     // Each one takes the keyboard entirely while it is up. Anything below it
     // in this list does not run at all, which is what keeps "Escape closes the
     // thing in front of me" from needing a state machine.
-    this.menu.update(dt, this.input, this.pointer, VIEW_W, VIEW_H, {
+    this.menu.update(dt, this.input, this.pointer, this.vw, this.vh, {
       onResume: () => { this.menu.hide(); this.audio.blip(2, 0.04); },
       onStartOver: () => this.startOver(),
       onCursor: () => this.audio.blip(6, 0.03),
@@ -1040,14 +1081,14 @@ class Game {
 
     if (this.ledger.open) {
       this.syncFreeze();
-      this.ledger.update(dt, this.input, this.pointer, this.ledgerHooks());
+      this.ledger.update(dt, this.input, this.pointer, this.ledgerHooks(), this.vw);
       if (this.input.wasPressed('menu') || this.input.wasPressed('ledger')) this.closeLedger();
       this.updateHudFade(dt);
       this.input.endFrame();
       this.pointer.endFrame();
       return;
     }
-    this.ledger.update(dt, this.input, this.pointer, this.ledgerHooks());
+    this.ledger.update(dt, this.input, this.pointer, this.ledgerHooks(), this.vw);
 
     // Browsers will not let audio start without a gesture, so the first key
     // press is what brings the valley's sound up.
@@ -1173,7 +1214,7 @@ class Game {
     }
     this.world.update(
       dt, this.time, this.weather, this.clock, this.particles,
-      this.camera.originX, this.camera.originY, VIEW_W, VIEW_H,
+      this.camera.originX, this.camera.originY, this.vw, this.vh,
     );
     this.pickups.update(
       dt, this.player.x, this.player.y,
@@ -1205,6 +1246,9 @@ class Game {
   }
 
   private render(): void {
+    // Before anything is drawn, in case the window changed shape since the
+    // last frame and the browser chose not to mention it.
+    this.renderer.syncSize();
     const { renderer, camera, world, clock } = this;
     const ctx = renderer.ctx;
     const camX = camera.originX;
@@ -1213,10 +1257,10 @@ class Game {
     this.sun = clock.shadow(this.weather.overcast);
 
     renderer.clearWorld();
-    world.drawGround(ctx, camX, camY, VIEW_W + 1, VIEW_H + 1, clock);
+    world.drawGround(ctx, camX, camY, this.vw + 1, this.vh + 1, clock);
     // Worked soil sits on the ground, above the terrain and below everything
     // that stands on it.
-    this.farm.drawSoil(ctx, camX, camY, VIEW_W + 1, VIEW_H + 1);
+    this.farm.drawSoil(ctx, camX, camY, this.vw + 1, this.vh + 1);
     // For a swung tool the bracket goes round the thing being struck; for a
     // farm action it goes round the square of ground.
     const brackX = this.harvestTarget ? Math.floor(this.harvestTarget.x / TILE) : this.targetTx;
@@ -1238,7 +1282,7 @@ class Game {
     this.rain.drawWaterRings(ctx, this.time, this.weather.rain, camX, camY, world.isWater);
     this.rain.drawSplashes(ctx, camX, camY);
     world.drawSorted(
-      ctx, camX, camY, VIEW_W + 1, VIEW_H + 1,
+      ctx, camX, camY, this.vw + 1, this.vh + 1,
       this.buildDrawables(), this.particles, clock, this.weather,
     );
     // Over everybody, under the lighting — a slip of paper in the world, lit
@@ -1272,17 +1316,18 @@ class Game {
 
     renderer.clearUi();
     const uctx = renderer.uctx;
-    drawVignette(uctx, VIEW_W, VIEW_H, 0.18 + clock.darkness * 0.12);
+    drawVignette(uctx, this.vw, this.vh, 0.18 + clock.darkness * 0.12);
     this.hud.draw(uctx, clock);
     this.hotbar.touch = this.touch.enabled;
-    this.hotbar.draw(uctx, this.inventory, VIEW_W, VIEW_H, this.time);
-    this.toast.draw(uctx, VIEW_W, VIEW_H);
-    drawDialogue(uctx, this.dialogue, VIEW_W, VIEW_H, this.time);
-    this.ledger.draw(uctx, VIEW_W, VIEW_H, this.ledgerHooks(), this.pointer, this.time);
+    this.hotbar.draw(uctx, this.inventory, this.vw, this.vh, this.time);
+    this.toast.draw(uctx, this.vw, this.vh);
+    drawDialogue(uctx, this.dialogue, this.vw, this.vh, this.time);
+    this.ledger.draw(uctx, this.vw, this.vh, this.ledgerHooks(), this.pointer, this.time);
     // Under the menus, over the world: the stick should never sit on top of a
     // panel you are reading, but it must stay visible while you play.
+    this.touch.dim = 1 - this.dialogue.open * 0.55;
     if (!this.ledger.active && !this.menu.active) this.touch.draw(uctx);
-    this.menu.draw(uctx, VIEW_W, VIEW_H, this.pointer, {
+    this.menu.draw(uctx, this.vw, this.vh, this.pointer, {
       onResume: () => {},
       onStartOver: () => {},
       onCursor: () => {},
@@ -1297,11 +1342,14 @@ class Game {
     if (this.transition.cover > 0.001) {
       uctx.globalAlpha = this.transition.cover;
       uctx.fillStyle = '#0d0b11';
-      uctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      uctx.fillRect(0, 0, this.vw, this.vh);
       uctx.globalAlpha = 1;
     }
-    this.title.draw(uctx, VIEW_W, VIEW_H);
-    this.debug.drawUi(uctx, this.loop, this.player, world, clock, this.weather, this.particles);
+    this.title.draw(uctx, this.vw, this.vh);
+    // Over everything, including the title card. The game keeps running behind
+    // it; turning the phone dismisses it with no state to unwind.
+    if (this.renderer.view.portrait) drawRotateHint(uctx, this.vw, this.vh, this.time);
+    this.debug.drawUi(uctx, this.loop, this.player, world, clock, this.weather, this.particles, this.vw);
 
     renderer.present(camera.fracX, camera.fracY);
   }

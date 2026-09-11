@@ -4,12 +4,13 @@ Updated: 2026-09-11
 
 ## Current build
 
-Phases 1 to 8 complete, plus persistence — the visual foundation, the
+Phases 1 to 9 complete, plus persistence — the visual foundation, the
 atmosphere over it, a farming loop you can run start to finish, a progression
 system that rebuilds the place in front of you, a settlement with people living
 in it, an answer to the question the valley has been asking since the first
 standing stone, a save that survives being handed a file it was not expecting,
-and a touch layer that makes the whole of it playable with two thumbs.
+a touch layer that makes the whole of it playable with two thumbs, and a
+viewport that fills whatever screen it is given without bending a pixel.
 
 A note on the numbering, because it was wrong for a while: two substantial
 milestones — save/load (`7cf8739`) and the dialogue system (`75f356f`) — were
@@ -108,6 +109,13 @@ bucket. It is now built.
   follow it without a journal then the writing is wrong and a journal would
   only hide that. It ends with an answer to the human question and one
   instruction nobody has had to obey
+- One authoritative viewport (`core/viewport.ts`) driving the render surfaces,
+  the camera, every panel and every pointer transform. Logical height is fixed
+  at 270; logical width flexes with the display's shape, so a wide screen gets
+  a wider room instead of the same room with bars either side. Every landscape
+  resolution tested fills 100% of the window
+- Backing buffers sized against devicePixelRatio, so pixel art is no longer
+  upscaled and softened by the browser on a high-density screen
 - Touch: a floating analog thumbstick that appears under the thumb, an action
   cluster, a touch-sized hotbar you can tap to select from, tap-outside to
   close a panel, and hints that name the device in your hand rather than a key
@@ -117,7 +125,14 @@ bucket. It is now built.
 - Debug overlay, art sheet (6 pages incl. an animation filmstrip and the NPC
   silhouette gate), deterministic dev stepper with pause/resume
 
-**Measured after the polish pass:** 4.9 ms/frame in the homestead, 5.6 in Bell
+**Measured after Phase 9:** 6.1 ms/frame in the homestead, 6.3 in Bell Row
+with all three residents, 6.5 in rain, 7.7 with the satchel open, 8.5 at a
+844x390 phone viewport where the logical view is 22% wider. Against a 16.7 ms
+budget. 14 MB heap. The rise over Phase 8 is the cost of the crispness fix: a
+1280x720 display now draws into a 2880x1620 buffer instead of 1920x1080, and
+a phone draws a 584-wide world instead of a 480-wide one.
+
+**Measured after the Phase 8 polish pass:** 4.9 ms/frame in the homestead, 5.6 in Bell
 Row with all three residents walking, 4.4 in the meadow, 6.0 worst case in rain,
 5.6 with the satchel open. At a 844x390 phone viewport: 3.6 homestead, 5.5 Bell
 Row, 5.7 in rain. All against a 16.7 ms budget. 27 MB heap with all three areas
@@ -141,7 +156,7 @@ plots, absurd numbers — all load without a single throw. Production bundle
 
 ## Current milestone
 
-None outstanding. The roadmap is finished: Phases 1 to 8 are built, tested and
+None outstanding. The roadmap is finished: Phases 1 to 9 are built, tested and
 pushed. What is left is listed under Next task, and none of it is a phase.
 
 ## Known issues
@@ -346,6 +361,29 @@ not belong in this game); procedural cave levels (scope).
 - **A duck you cannot hear is not a duck, and one you cannot hear past is a
   fault.** Measured at 13% and then at 85% before settling near 60%: the
   weather should step back, not disappear.
+- **`touch-action: none`, or the phone eats the drag.** Without it the browser
+  claims a finger drag as a pan gesture and fires `pointercancel` part-way
+  through, and the thumbstick loses tracking the moment it starts working. This
+  was the reason movement was unreliable on a real device, and it was invisible
+  to every automated test because synthetic pointer events never go near the
+  browser's gesture recogniser.
+- **A cancel is not a release.** `pointercancel` means the system took the
+  gesture — a scroll, a back-swipe, an incoming call. The contact is gone
+  either way, but reporting it as a completed click fires the button underneath
+  something the player never finished pressing.
+- **The viewport is polled every frame, not waited for.** Mobile browsers do
+  not reliably fire `resize` when the address bar collapses, and an orientation
+  change often reports stale dimensions for a frame afterwards. Two float
+  comparisons per frame cannot be missed.
+- **The backing buffer is sized in device pixels.** A 960x540 buffer shown
+  across 1280 device pixels is upscaled by the browser with smoothing, which is
+  how a pixel-art game ends up soft on every modern phone while every
+  screenshot on a desktop looks perfect.
+- **Portrait asks rather than compromises.** The valley reads sideways. The
+  honest options were to show half the map or to ask for the phone to be
+  turned, so it asks, in the same paper and ink as everything else.
+- **The pause menu ducks the valley, it does not mute it.** A hard cut to
+  silence reads as a fault.
 - **A version newer than this build is refused outright.** Reading it would
   silently discard whatever it knows that this build does not, and then write
   the loss back on the next autosave.

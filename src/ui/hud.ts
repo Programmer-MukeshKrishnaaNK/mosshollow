@@ -116,6 +116,52 @@ export class Toast {
  * the player is looking at the actual game the whole time, which is a better
  * first impression than a separate menu screen.
  */
+/**
+ * TURN THE PHONE
+ *
+ * Moss Hollow is framed in landscape — the valley reads across, the row of
+ * cottages is a row, and the camera leads horizontally. In portrait the honest
+ * options are to show half the map or to ask, so it asks, in the same paper
+ * and ink as everything else. It is not a modal: the game keeps running behind
+ * it and the moment the phone turns it is gone.
+ */
+export function drawRotateHint(
+  ctx: CanvasRenderingContext2D,
+  viewW: number,
+  viewH: number,
+  time: number,
+): void {
+  ctx.save();
+  ctx.globalAlpha = 0.82;
+  ctx.fillStyle = PALETTE.inkCool;
+  ctx.fillRect(0, 0, viewW, viewH);
+  ctx.globalAlpha = 1;
+
+  const cx = Math.round(viewW / 2);
+  const cy = Math.round(viewH / 2);
+  // A phone, tipping. The tilt is the instruction; the words only confirm it.
+  const tilt = Math.sin(time * 1.6) * 0.16 - 0.16;
+  ctx.translate(cx, cy - 14);
+  ctx.rotate(tilt);
+  const w = 26;
+  const h = 42;
+  ctx.fillStyle = PALETTE.ink;
+  ctx.fillRect(-w / 2 - 1, -h / 2 - 1, w + 2, h + 2);
+  ctx.fillStyle = PALETTE.wood2;
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.fillStyle = PALETTE.cream1;
+  ctx.fillRect(-w / 2 + 3, -h / 2 + 5, w - 6, h - 11);
+  ctx.fillStyle = PALETTE.wood3;
+  ctx.fillRect(-3, h / 2 - 4, 6, 1);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  const line = 'turn your phone';
+  drawTextShadowed(ctx, line, cx - Math.round(textWidth(line) / 2), cy + 26, PALETTE.cream0, PALETTE.ink);
+  const sub = 'the valley reads sideways';
+  drawText(ctx, sub, cx - Math.round(textWidth(sub) / 2), cy + 38, PALETTE.stone2);
+  ctx.restore();
+}
+
 export class TitleCard {
   t = 0;
   dismissed = false;
