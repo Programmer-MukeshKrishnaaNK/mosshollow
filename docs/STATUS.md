@@ -4,9 +4,17 @@ Updated: 2026-09-11
 
 ## Current build
 
-Phases 1 to 4 and 6 complete, plus persistence — the visual foundation, the
-atmosphere over it, a farming loop you can run start to finish, and a save that
-survives being handed a file it was not expecting.
+Phases 1 to 6 complete, plus persistence — the visual foundation, the
+atmosphere over it, a farming loop you can run start to finish, a progression
+system that rebuilds the place in front of you, a settlement with people living
+in it, and a save that survives being handed a file it was not expecting.
+
+A note on the numbering, because it was wrong for a while: two substantial
+milestones — save/load (`7cf8739`) and the dialogue system (`75f356f`) — were
+built and shipped without phase numbers, so the count drifted out of step with
+the commits. "Phase 5" was coined retroactively in the Phase 6 commit as a name
+for the settlement work that had until then lived unnumbered in the LATER
+bucket. It is now built.
 
 **Working and verified in-browser:**
 
@@ -75,12 +83,31 @@ survives being handed a file it was not expecting.
   corrupted file degrades rather than crashes. Prop changes are saved as
   mutations keyed by position, so the two thousand generated props never touch
   the file and a layout change does not invalidate anyone's game
-- Debug overlay, art sheet (5 pages incl. an animation filmstrip), deterministic
-  dev stepper with pause/resume
+- Bell Row: a four-plot hamlet south down the old spur, with three residents
+  and one shuttered house. Cottages are built in code as a sibling of the
+  farmhouse builder, at a smaller footprint, so the player's house stays the
+  largest and best-lit building in the valley
+- NPCs: Nan Hollis, Rue and Orrin Fell — hand-authored at 16x24 against the
+  shared palette, three silhouettes (round / thin / square), three gaits, and
+  one saturated garment between them. They join the world's existing
+  depth-sorted pass as Drawables and need no renderer change at all
+- Schedules: keyframed by hour against named waypoints in area data, with an
+  L-shaped route out to the lane and back in. No pathfinding, and nothing to
+  get stuck on
+- Weather reactions, one per character and all different: Nan goes in, Orrin
+  carries on because his shed has a roof, Rue goes and stands in it
+- Conversation through the existing dialogue system with the speaker tab that
+  had been drawn and unused since Phase 4; lines gated on projects finished and
+  inspectables read, with per-person topics rather than a friendship number
+- Barks: a world-anchored slip of paper, once a day per person, no input and no
+  freeze
+- Debug overlay, art sheet (6 pages incl. an animation filmstrip and the NPC
+  silhouette gate), deterministic dev stepper with pause/resume
 
-**Measured:** 5.9-6.2 ms/frame in the homestead — day, night, raining, and with
-any interface screen open — against a 16.7 ms budget; 2.4 ms in the meadow.
-9 MB heap with both areas built and held.
+**Measured:** 5.2-6.2 ms/frame in the homestead — day, night, raining, and with
+any interface screen open — against a 16.7 ms budget; 2.4 ms in the meadow;
+6.2-6.3 ms in Bell Row across day, dusk, rain and night with all three
+residents walking their day. 14.5 MB heap with all three areas built and held.
 Audio peaks at 0.30 with no clipping. Swept all four sky states against eight
 times of day with no runtime errors. Farm loop verified end to end: till,
 plant (seed consumed), water, seven watered days through all five growth
@@ -94,10 +121,13 @@ plots, absurd numbers — all load without a single throw. Production bundle
 
 ## Current milestone
 
-Phase 4 — exploration. Resource gathering, and somewhere to go.
+Phase 7 — story. The settlement is in; what it knows is not.
 
 ## Known issues
 
+- **Bell Row has no interiors and will not get them.** Doors do not open;
+  "indoors" means the person stops being drawn once they reach their step.
+  It is the right scope for a vertical slice and it is visible as a limit.
 - **The interface has not been used with a finger.** It is built for it — one
   pointer path, hit-testing in game coordinates, presses that cancel if you
   slide off — but it has only been driven by a mouse and a keyboard so far.
@@ -127,15 +157,15 @@ mid-reveal completes the line rather than skipping it. No runtime errors.
 
 ## Next task
 
-Phase 5 — the settlement. It is the one phase still outstanding: people with
-names, schedules, somewhere to live, and something to say. The dialogue system
-already deals in speakers and pages precisely so a conversation can use it
-without changes.
+Phase 7 — story. Bell Row now says there were nine bells, that they came down
+in one night, and that the people of the valley took them down themselves
+because somebody asked them to. Nan will not say who asked, and that is the
+thread Phase 7 has to pull: who asked, why they agreed, and what the stones are
+still warm from.
 
-After that, Phase 7 (story) and Phase 8 (polish), and the Android build:
-the pointer layer is in and every control is already a rectangle in game
-coordinates, so what remains is on-screen movement controls and a touch-sized
-pass over the hotbar.
+After that, Phase 8 (polish) and the Android build: the pointer layer is in and
+every control is already a rectangle in game coordinates, so what remains is
+on-screen movement controls and a touch-sized pass over the hotbar.
 
 ## Deferred, on purpose
 
@@ -220,6 +250,47 @@ not belong in this game); procedural cave levels (scope).
   adding detail, because detail is invisible at 480x270.
 - **Start Over is two screens and names what it destroys.** "Are you sure?"
   tells nobody anything, and the safe option is the one already selected.
+- **Three residents, not four.** Four houses with four people in them is a
+  functioning village, and a functioning village contradicts everything the
+  valley has said so far. The empty house is the fourth character and it costs
+  a prop, a bench and a swept step.
+- **Nan sweeps two steps every morning.** Hers, and the one belonging to the
+  house nobody lives in. Nothing in the game ever mentions it.
+- **Silhouette, motion and colour, in that order.** Round/thin/square, then
+  slow/erratic/still, then cream-and-grey / one orange cap / a dark apron. The
+  first pass had Nan as an undifferentiated cream blob and Orrin looking like a
+  man carrying a white tray; both were caught on the art sheet's silhouette row
+  and redrawn before a single line of movement code was written.
+- **Cottages are props, not houses.** The World supports exactly one `house`
+  and it belongs to the player. Registering the cottages as props gave them
+  depth sorting, shadows, colliders and window light for nothing, and asked the
+  renderer for nothing it did not already do.
+- **The cottages are deliberately smaller than the farmhouse.** A cottage that
+  matches it steals the one thing Phase 6 spent its whole length earning.
+- **NPC position is derived, never saved.** Where somebody is standing is a
+  function of the hour, so arriving in an area evaluates it rather than
+  replaying it. The save has nothing to desync from and an area you are not
+  standing in costs nothing at all.
+- **Relationship state is not a number.** `met`, the day you last spoke, and a
+  set of topics. A bar that fills is the exact generic-RPG texture Bell Row was
+  built to avoid.
+- **An L, not a search.** Out to the lane, along it, in at the far end. Bell
+  Row is one corridor with things either side, so a pathfinder would only be a
+  more expensive way to get the same route with more ways to fail.
+- **Orrin's shed has a visible roof.** It is the entire reason he can keep
+  working through a downpour, and it has to be *visible* or the behaviour reads
+  as a bug rather than as sense.
+- **A person outranks every other use of the interact key**, including an
+  unread inspectable and a held tool. Standing in front of Orrin with an axe
+  and pressing E must never swing it.
+- **The worn earth in front of each door was cut stone first, and it was
+  wrong.** Stone in this game is the ruin floor and the farmhouse footing, so a
+  patch of it on grass reads as rubble rather than as a doorstep, and at
+  480x270 it is only ever a grey smudge floating off the path.
+- **Nothing grows in the water.** The forest generator guarded against Path and
+  never against Water, so anywhere a stream ran out through the tree line it
+  planted trunks mid-current — forty-eight of them in the meadow, unnoticed
+  since Phase 4b.
 - **A version newer than this build is refused outright.** Reading it would
   silently discard whatever it knows that this build does not, and then write
   the loss back on the next autosave.

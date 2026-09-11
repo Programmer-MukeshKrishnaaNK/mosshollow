@@ -14,7 +14,12 @@
 
 import { makeRng } from '../core/rng.ts';
 import { FOLIAGE_RAMP, STONE_RAMP, makeBlob } from '../art/organic.ts';
-import { sprite, type Sprite } from '../art/pixel.ts';
+import { ctxOf, makeCanvas, paintInto, sprite, type Sprite } from '../art/pixel.ts';
+import { buildCottage, buildShed, type CottageKind } from '../art/cottage.ts';
+import {
+  BELL_BRACKET, BELL_FRAME, BENCH, BOWL, LINE_POST, OFFCUTS, SHEETS, WELL,
+} from '../art/bellrow.art.ts';
+import { PALETTE } from '../art/palette.ts';
 import {
   BELL_MARKER, BIRCH_TRUNK, CRATE, DOCK_PLANK, FENCE_POST, FENCE_RAIL,
   FLOWER_RED, FLOWER_VIOLET, FLOWER_WHITE, LANTERN_POST, OAK_TRUNK, PEBBLE,
@@ -81,6 +86,11 @@ export interface PropDef {
   sortBias?: number;
   /** Sheds leaves from this height while the wind blows. */
   sheds?: { rate: number; height: number; spread: number };
+  /**
+   * A chimney, relative to the ground anchor. `allDay` is for the house that
+   * always has somebody in it; everything else only burns morning and evening.
+   */
+  smoke?: { dx: number; dy: number; allDay?: boolean };
   /** Default entry in the inspect table. A placement can override it. */
   inspect?: string;
   /** Present if this prop can be worked with a tool. */
@@ -291,6 +301,139 @@ export function buildProps(): Record<string, PropDef> {
       { dx: 0, dy: -19, radius: 22, color: '#ffd884', intensity: 0.45, flickerAmount: 0.35, nightOnly: true },
     ],
   };
+
+  // --- Bell Row ------------------------------------------------------------
+  // The cottages are props rather than houses. The World supports exactly one
+  // `house` and that one is the player's; registering these as props gives
+  // them depth sorting, shadows, colliders and window light for free, and asks
+  // the renderer for nothing it does not already do.
+  const COTTAGES: CottageKind[] = ['nan', 'orrin', 'rue', 'empty'];
+  for (const kind of COTTAGES) {
+    const c = buildCottage(kind);
+    const ox = c.sprite.ox;
+    const oy = c.sprite.oy;
+    defs[`cottage_${kind}`] = {
+      id: `cottage_${kind}`,
+      layers: [{ sprite: c.sprite, dx: -ox, dy: -oy, sway: 0 }],
+      collider: {
+        dx: c.solid.x - ox, dy: c.solid.y - oy + c.solid.h - 7,
+        w: c.solid.w, h: 7,
+      },
+      lights: c.windows.map((wdw) => ({
+        dx: wdw.x - ox,
+        dy: wdw.y - oy,
+        radius: 40,
+        color: PALETTE.lamp,
+        intensity: 0.85,
+        flickerAmount: 0.06,
+        nightOnly: true,
+      })),
+      ...(c.smoke ? { smoke: { dx: c.smoke.x - ox, dy: c.smoke.y - oy, allDay: kind === 'nan' } } : {}),
+    };
+  }
+
+  const shed = buildShed();
+  defs.shed = {
+    id: 'shed',
+    layers: [{ sprite: shed.sprite, dx: -shed.sprite.ox, dy: -shed.sprite.oy, sway: 0 }],
+    collider: {
+      dx: shed.solid.x - shed.sprite.ox,
+      dy: shed.solid.y - shed.sprite.oy + shed.solid.h - 6,
+      w: shed.solid.w, h: 6,
+    },
+  };
+
+  // The frame at the end of the lane, and the bracket it carries. Two layers,
+  // because the bracket is the part that matters and it wants its own place.
+  const frame = sprite(BELL_FRAME, 13, 33);
+  const bracket = sprite(BELL_BRACKET, 9, 9);
+  defs.bellFrame = {
+    id: 'bellFrame',
+    layers: [
+      { sprite: frame, dx: -13, dy: -33, sway: 0 },
+      { sprite: bracket, dx: -9, dy: -40, sway: 0 },
+    ],
+    collider: { dx: -12, dy: -4, w: 24, h: 4 },
+    inspect: 'bell_frame',
+    lights: [
+      // The same barely-there warmth the standing stones have. You should not
+      // be certain you saw it.
+      { dx: 0, dy: -34, radius: 26, color: PALETTE.gold, intensity: 0.4, flickerAmount: 0.38, nightOnly: true },
+    ],
+  };
+
+  const well = sprite(WELL, 10, 33);
+  defs.well = {
+    id: 'well',
+    layers: [{ sprite: well, dx: -10, dy: -33, sway: 0 }],
+    collider: { dx: -10, dy: -7, w: 20, h: 7 },
+    inspect: 'well',
+  };
+
+  const bench = sprite(BENCH, 9, 10);
+  defs.bench = {
+    id: 'bench',
+    layers: [{ sprite: bench, dx: -9, dy: -10, sway: 0 }],
+    collider: { dx: -9, dy: -3, w: 18, h: 3 },
+  };
+
+  const bowl = sprite(BOWL, 5, 8);
+  defs.bowl = {
+    id: 'bowl',
+    layers: [{ sprite: bowl, dx: -5, dy: -8, sway: 0 }],
+    inspect: 'bowl',
+  };
+
+  const offcuts = sprite(OFFCUTS, 8, 11);
+  defs.offcuts = {
+    id: 'offcuts',
+    layers: [{ sprite: offcuts, dx: -8, dy: -11, sway: 0 }],
+    collider: { dx: -8, dy: -4, w: 16, h: 4 },
+    inspect: 'offcuts',
+  };
+
+  // --- the washing line ------------------------------------------------------
+  // Posts and rope are baked into one static layer; the sheets are separate
+  // layers with a lot of sway. They are the only things in Bell Row that move
+  // with the wind, which is the cheapest possible proof that this place is in
+  // the same valley as the grass and the canopies.
+  {
+    const span = 84;
+    const postH = 18;
+    const w = span + 10;
+    const h = postH + 6;
+    const canvas = makeCanvas(w, h);
+    const ctx = ctxOf(canvas);
+    paintInto(ctx, LINE_POST, 0, h - postH);
+    paintInto(ctx, LINE_POST, span, h - postH);
+    // A rope sags. A straight one reads as a wire and the whole thing dies.
+    ctx.fillStyle = PALETTE.cream1;
+    for (let x = 4; x <= span + 4; x++) {
+      const t = (x - 4) / span;
+      const sag = Math.sin(t * Math.PI) * 5;
+      ctx.fillRect(x, Math.round(h - postH + 2 + sag), 1, 1);
+      ctx.fillStyle = PALETTE.wood2;
+      ctx.fillRect(x, Math.round(h - postH + 3 + sag), 1, 1);
+      ctx.fillStyle = PALETTE.cream1;
+    }
+    const base: Sprite = { canvas, w, h, ox: 5, oy: h };
+    const layers: PropLayer[] = [{ sprite: base, dx: -5, dy: -h, sway: 0 }];
+    // Hung along the rope, each one following the sag it hangs from.
+    const at = [14, 34, 52, 70];
+    for (let i = 0; i < SHEETS.length; i++) {
+      const sh = sprite(SHEETS[i]);
+      const t = (at[i] - 4) / span;
+      const sag = Math.round(Math.sin(t * Math.PI) * 5);
+      layers.push({
+        sprite: sh,
+        dx: at[i] - 5,
+        dy: -h + (h - postH) + 3 + sag,
+        sway: 3.4 + i * 0.4,
+        swayBias: 0.5,
+      });
+    }
+    defs.washline = { id: 'washline', layers, inspect: 'washline' };
+  }
 
   const board = sprite(PROJECT_BOARD, 12, 23);
   defs.projectBoard = {

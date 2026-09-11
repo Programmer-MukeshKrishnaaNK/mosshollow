@@ -61,4 +61,16 @@ export interface AreaData {
   keepClear?: readonly { x: number; y: number; w: number; h: number }[];
   /** How many tiles of dense forest wrap the playable area. */
   forestBorder: number;
+  /**
+   * Named places an NPC can be sent to, in tiles. Schedules address these by
+   * name, so moving a bench is a data change and never a code one.
+   */
+  waypoints?: Record<string, { tx: number; ty: number }>;
+  /**
+   * The y of the open corridor NPCs route along — the lane. Movement is an
+   * L: out to the corridor, along it, then in to the target. That is all the
+   * pathing this settlement needs and it cannot get stuck, which is worth more
+   * than a search that can.
+   */
+  corridorY?: number;
 }

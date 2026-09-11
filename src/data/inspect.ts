@@ -123,6 +123,65 @@ export const INSPECT: Record<string, InspectEntry> = {
     'It was never unpacked. It was never collected either.',
   ],
 
+  // The fourth bracket. It gives one hard new fact — this one was taken down
+  // carefully, by somebody with tools and time — and asks a larger question
+  // than it answers. The answer is not Phase 5's to give.
+  bell_frame: (seen) => {
+    const found = ['bell_wood', 'bell_pond', 'bell_ruin'].filter((k) => seen.has(k)).length;
+    if (found >= 3) {
+      return [
+        'The fourth. And the only one anybody built a frame for.',
+        'Headstock, gudgeons, a wheel mount — all of it cut to carry something heavy that was meant to swing, and cut well.',
+        'The bracket is empty, the same as the three stones out in the valley. But look at the timber: this one was unbolted. The holes are clean and the pins were set aside on the crossbeam, in a row, in order.',
+        'Nobody who was stealing a bell would put the pins back in order.',
+        'The grass at the foot is worn into a ring, and it has not grown back.',
+      ];
+    }
+    if (found >= 1) {
+      return [
+        'A timber frame at the end of the lane, taller than the house behind it, with an iron bracket at the top.',
+        'The bracket is empty. You have seen that bracket before, out in the valley, on stone.',
+        'This one has a headstock and a wheel mount. Whatever hung here was meant to swing, and somebody built it a home.',
+      ];
+    }
+    return [
+      'A timber frame at the end of the lane, hand-cut, taller than the house behind it.',
+      'There is an iron bracket at the top with nothing hanging from it, and a ring of worn grass at the foot.',
+      'It is the only thing in Bell Row that anybody has kept the weeds off.',
+    ];
+  },
+
+  well: [
+    'Dressed stone, laid dry, and the coping worn into a dip on the side facing the lane.',
+    'The bucket is wet. Somebody has drawn water this morning.',
+  ],
+
+  house_shut: [
+    'Boards across the glass, nailed at an angle by somebody in a hurry or somebody who did not care which way they went.',
+    'The chimney is cold. Moss has got into the courses on the shaded side, which takes years.',
+    'The step in front of the door has been swept. Recently, and well.',
+  ],
+
+  bench_shut: [
+    'A plank bench outside a house with boards on the windows.',
+    'The seat is worn pale in two places. One of them is still being used.',
+  ],
+
+  bowl: [
+    'A shallow bowl beside Nan\'s door, out of the wind.',
+    'It is full, and it is clean.',
+  ],
+
+  offcuts: [
+    'A stack of offcuts beside the shed, sorted by length.',
+    'Nobody sorts offcuts by length unless they are expecting an order.',
+  ],
+
+  washline: [
+    'A line strung between two posts, with somebody\'s washing on it.',
+    'Four things, for three houses.',
+  ],
+
   stump_old: [
     'Cut clean, and a long time ago.',
     'You start counting rings out of habit and lose your place somewhere after sixty.',

@@ -1,0 +1,277 @@
+/**
+ * WHAT THE THREE OF THEM SAY
+ *
+ * Same idiom as `inspect.ts` — an entry is a function of what the player has
+ * already done — widened from one argument to a context, because a person can
+ * notice more than a signpost can. `systems/dialogue.ts` is not touched: it
+ * was written speaker-and-page-aware on day one and the `speaker` tab in
+ * `dialogueBox.ts` has been drawn and unused ever since. This is what it was
+ * for.
+ *
+ * Selection order is: first meeting, then anything newly unlocked, then a line
+ * for today's hour and weather, then a repeat. Repeats are written *as*
+ * repeats. People in small places say the same thing twice and pretending
+ * otherwise is what makes a village feel like a menu.
+ *
+ * On the bells: Nan gives exactly one hard new fact and takes the question
+ * somewhere larger. She does not explain, and she is not being coy for the
+ * sake of it — she is telling the truth about the part she will talk about.
+ * The rest is not Phase 5's to give away.
+ */
+
+import type { DialogueLine } from '../systems/dialogue.ts';
+import type { Phase } from '../systems/time.ts';
+import type { Sky } from '../systems/weather.ts';
+
+export interface TalkCtx {
+  /** Inspect keys read. */
+  seen: ReadonlySet<string>;
+  /** Finished projects. */
+  done: ReadonlySet<string>;
+  day: number;
+  phase: Phase;
+  sky: Sky;
+  met: boolean;
+  lastDay: number;
+  topics: ReadonlySet<string>;
+}
+
+export interface TalkResult {
+  lines: readonly (DialogueLine | string)[];
+  /** Remembered once delivered, so it is never offered as news twice. */
+  unlock?: string;
+}
+
+const say = (speaker: string, ...text: string[]): DialogueLine[] =>
+  text.map((t) => ({ speaker, text: t }));
+
+// --- NAN ---------------------------------------------------------------------
+
+const NAN = 'Nan Hollis';
+
+function nan(c: TalkCtx): TalkResult {
+  if (!c.met) {
+    return {
+      lines: say(NAN,
+        'You will be the one who took the old place up the road.',
+        'I am not going to ask how you are finding it. You will tell me when you have decided.',
+        'Nan Hollis. The step you are standing on is mine, so mind it.',
+      ),
+      unlock: 'met',
+    };
+  }
+
+  // The payoff of the three standing stones. One new fact, a larger question.
+  const bells = ['bell_wood', 'bell_pond', 'bell_ruin'].every((k) => c.seen.has(k));
+  if (bells && !c.topics.has('bells')) {
+    return {
+      lines: say(NAN,
+        'You have been out at the stones.',
+        'Do not look like that. There is nothing clever about it — you have mud to the knee and there is only one place in this valley you get that colour of mud.',
+        'There were bells. That is not a secret, it is just old. Nine of them, between the stones and the frame at the end of my lane.',
+        'They came down in one night.',
+        'And before you ask: nobody stole them. We took them down. Every one of us who could hold a spanner, and we worked until it was light.',
+        'Somebody asked us to. We thought it was a reasonable thing to be asked.',
+        'That is the part I will talk about.',
+      ),
+      unlock: 'bells',
+    };
+  }
+
+  if (c.done.has('roof') && !c.topics.has('roof')) {
+    return {
+      lines: say(NAN,
+        'You have had that roof off and on again.',
+        'I can see it from my step, you know. It has looked like a wet hat for eleven years and now it does not.',
+        'Do not thank me for noticing. I have nothing else to look at.',
+      ),
+      unlock: 'roof',
+    };
+  }
+
+  if (c.done.has('fence') && !c.topics.has('fence')) {
+    return {
+      lines: say(NAN,
+        'The field fence is up.',
+        'The man who let it fall down was a good man and a terrible farmer, and he would be pleased, and he would not have done it himself.',
+      ),
+      unlock: 'fence',
+    };
+  }
+
+  if (c.sky === 'rain') {
+    return { lines: say(NAN, 'I am not standing out in that and neither should you.', 'Go on. It will keep.') };
+  }
+  if (c.phase === 'dawn' || c.phase === 'morning') {
+    return { lines: say(NAN, 'Morning. There is a broom against the wall if you are going to stand there.') };
+  }
+  if (c.phase === 'dusk' || c.phase === 'night') {
+    return { lines: say(NAN, 'Late for a walk.', 'Not a criticism. I have made a career of them.') };
+  }
+  return { lines: say(NAN, 'Still here, then.', 'So am I. That is the whole of the news.') };
+}
+
+/** The step she sweeps that is not hers. Only offered if you have read it. */
+function nanShut(c: TalkCtx): TalkResult | null {
+  if (!c.seen.has('house_shut') || c.topics.has('shut')) return null;
+  return {
+    lines: say(NAN,
+      'You have been looking at the shut house.',
+      'I sweep the step. It takes a minute and it costs me nothing.',
+      'No, I am not going to tell you whose it is. You can work out that I would not sweep it if it were nobody\'s.',
+    ),
+    unlock: 'shut',
+  };
+}
+
+// --- RUE ---------------------------------------------------------------------
+
+const RUE = 'Rue';
+
+function rue(c: TalkCtx): TalkResult {
+  if (!c.met) {
+    return {
+      lines: say(RUE,
+        'You are the new one.',
+        'Do not worry, everybody knows. There are three of us. A cat could keep up.',
+        'Rue. What is it like out there?',
+        'Not the valley. *Out* there.',
+      ),
+      unlock: 'met',
+    };
+  }
+
+  if (c.done.has('lamps') && !c.topics.has('lamps')) {
+    return {
+      lines: say(RUE,
+        'You lit the track.',
+        'Do you know what that means? I can walk down it. After dark. Without Nan doing the face.',
+        'That is the furthest I have been allowed to go since I was eleven, and it is a road to a farm.',
+        'I am not complaining. I am telling you I noticed.',
+      ),
+      unlock: 'lamps',
+    };
+  }
+
+  if (c.done.has('porch') && !c.topics.has('porch')) {
+    return {
+      lines: say(RUE,
+        'Orrin says you have put a porch on it. He said it twice.',
+        'Can I see it? Not now. Sometime.',
+        'I have never been in a house that was not one of these four.',
+      ),
+      unlock: 'porch',
+    };
+  }
+
+  if (c.sky === 'rain') {
+    return {
+      lines: say(RUE,
+        'I know.',
+        'It is the only thing that happens here that was not decided forty years ago.',
+      ),
+    };
+  }
+  if (c.phase === 'night' || c.phase === 'dusk') {
+    return { lines: say(RUE, 'I am not lost. I live eleven metres that way.', 'I am just not going in yet.') };
+  }
+  return {
+    lines: say(RUE,
+      'Where were you before?',
+      'You do not have to say. Everyone here answers that one with the weather.',
+    ),
+  };
+}
+
+// --- ORRIN --------------------------------------------------------------------
+
+const ORRIN = 'Orrin Fell';
+
+function orrin(c: TalkCtx): TalkResult {
+  if (!c.met) {
+    return {
+      lines: say(ORRIN,
+        'Mind the shavings, they get everywhere — no, come in, there is room.',
+        'Orrin Fell. Joiner. There is no joinery, but the title stays with you like a limp.',
+        'You have the look of somebody who has been pulling things down. That is the easy half.',
+      ),
+      unlock: 'met',
+    };
+  }
+
+  if (c.done.has('porch') && !c.topics.has('porch')) {
+    return {
+      lines: say(ORRIN,
+        'The porch. Did you halve the joints or just butt them and nail through?',
+        '...',
+        'Butted them. That is fine. That is fine, it will stand.',
+        'Come to me before you do the next one and I will show you a lap joint. It takes four more minutes and it lasts forty more years.',
+      ),
+      unlock: 'porch',
+    };
+  }
+
+  if (!c.topics.has('planks')) {
+    return {
+      lines: say(ORRIN,
+        'You have been felling. I can hear it from here — three strokes and a pause, so you are letting the axe do it. Good.',
+        'Do not build with it round. Rive it, square it, let it sit. Three lengths gives you two boards worth having and a pile of what people sell as boards.',
+        'That is the whole of my trade and I have just given it to you for nothing.',
+      ),
+      unlock: 'planks',
+    };
+  }
+
+  if (c.sky === 'rain') {
+    return {
+      lines: say(ORRIN,
+        'I have a roof on this. It is the entire reason it is here.',
+        'Rain is good for the timber and bad for the glue, and I am mostly doing timber today.',
+      ),
+    };
+  }
+  if (c.phase === 'evening' || c.phase === 'dusk') {
+    return { lines: say(ORRIN, 'Walking the lane. I do it to stop looking at the bench.', 'It does not work.') };
+  }
+  return {
+    lines: say(ORRIN,
+      'Four barrels, eleven years ago. That is the last order this row took.',
+      'I still sort the offcuts by length. You may draw your own conclusions and I would rather you did not say them out loud.',
+    ),
+  };
+}
+
+const TABLE: Record<string, (c: TalkCtx) => TalkResult> = { nan, rue, orrin };
+const EXTRA: Record<string, ((c: TalkCtx) => TalkResult | null)[]> = { nan: [nanShut] };
+
+export function resolveTalk(id: string, ctx: TalkCtx): TalkResult | null {
+  for (const fn of EXTRA[id] ?? []) {
+    const r = fn(ctx);
+    if (r) return r;
+  }
+  const base = TABLE[id];
+  return base ? base(ctx) : null;
+}
+
+/**
+ * The short line that floats over somebody's head the first time you come near
+ * them in a day. Not the dialogue box — no input, no freeze. This is what makes
+ * a settlement feel populated; forcing a modal panel for "morning" is what
+ * makes it feel like a menu with legs.
+ */
+export function bark(id: string, ctx: TalkCtx): string {
+  const wet = ctx.sky === 'rain';
+  if (id === 'nan') {
+    if (wet) return 'Inside. Both of us.';
+    if (!ctx.met) return 'Mm.';
+    return ctx.phase === 'dawn' || ctx.phase === 'morning' ? 'Morning.' : 'Still here.';
+  }
+  if (id === 'rue') {
+    if (wet) return 'Best day all week.';
+    if (!ctx.met) return 'Oh — hello.';
+    return ctx.phase === 'night' || ctx.phase === 'dusk' ? 'I am not going in.' : 'Anything happen?';
+  }
+  if (wet) return 'Dry under here.';
+  if (!ctx.met) return 'Mind the shavings.';
+  return 'Aye.';
+}

@@ -27,7 +27,7 @@ import type { Slot } from './inventory.ts';
 import type { Sky } from './weather.ts';
 import type { PropChange } from '../world/props.ts';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 const KEY = 'mosshollow.save';
 /** Where version 1 lived. Read once, migrated, and then left alone. */
 const LEGACY_KEY = 'mosshollow.save.v1';
@@ -51,6 +51,21 @@ export interface SaveData {
    * and existing saves get the better version.
    */
   projects: string[];
+  /**
+   * Who you have spoken to, and what has come up. Deliberately not a number:
+   * a bar that fills is the generic-RPG texture Bell Row exists to avoid.
+   *
+   * Where anybody is *standing* is not here. Position is a function of the
+   * hour, so it is re-derived on arrival — the same call the projects made
+   * about world state, and it means this block has nothing to desync from.
+   */
+  npcs: Record<string, NpcSave>;
+}
+
+export interface NpcSave {
+  met: boolean;
+  lastDay: number;
+  topics: string[];
 }
 
 export interface AreaSave {
@@ -213,6 +228,7 @@ export function read(): SaveData | null {
       slots: readSlots(inventory.slots),
     },
     areas: readAreas(root, version),
+    npcs: readNpcs(root),
     seen: arr(root.seen).filter((k): k is string => typeof k === 'string'),
     projects: arr(root.projects).filter((k): k is string => typeof k === 'string'),
   };
@@ -222,6 +238,28 @@ export function read(): SaveData | null {
  * Version 1 kept a single flat farm and prop list, because there was only one
  * place to be. Those belong to the homestead.
  */
+/**
+ * Absent in every version 2 file, which is the normal case for anyone who was
+ * already playing — so it defaults to nobody having met anybody rather than
+ * refusing the file. Ids this build no longer has are dropped rather than
+ * carried forward for ever, and topic lists are capped so a hand-edited save
+ * cannot hand the game a million strings.
+ */
+function readNpcs(root: Unknown): Record<string, NpcSave> {
+  const out: Record<string, NpcSave> = {};
+  const src = obj(root.npcs);
+  for (const id of Object.keys(src)) {
+    if (typeof id !== 'string' || id.length > 40) continue;
+    const v = obj(src[id]);
+    out[id] = {
+      met: bool(v.met, false),
+      lastDay: Math.max(-1, Math.floor(num(v.lastDay, -1))),
+      topics: arr(v.topics).filter((t): t is string => typeof t === 'string').slice(0, 64),
+    };
+  }
+  return out;
+}
+
 function readAreas(root: Unknown, version: number): Record<string, AreaSave> {
   const out: Record<string, AreaSave> = {};
   if (version < 2) {

@@ -59,6 +59,8 @@ export class World {
 
   /** Props that shed leaves, cached so the ambient pass need not filter. */
   private shedders: Prop[] = [];
+  /** Props with a chimney, cached so the ambient pass need not filter. */
+  private smokers: Prop[] = [];
   /** Props currently ringing from a blow, so the update is not a full scan. */
   private struck: Prop[] = [];
   /**
@@ -96,6 +98,7 @@ export class World {
     this.props.sort((a, b) => (a.y + (a.def.sortBias ?? 0)) - (b.y + (b.def.sortBias ?? 0)));
     this.buildColliders();
     this.shedders = this.props.filter((p) => p.def.sheds);
+    this.smokers = this.props.filter((p) => p.def.smoke);
   }
 
   // --- construction ---------------------------------------------------------
@@ -384,14 +387,23 @@ export class World {
     if (this.struck.length) this.struck = this.struck.filter((p) => (p.shake ?? 0) > 0);
 
     // Chimney smoke, but only while somebody would have a fire lit.
-    if (this.house) {
-      const cold = clock.hour < 8.5 || clock.hour > 17;
-      this.smokeTimer -= dt;
-      if (cold && this.smokeTimer <= 0) {
-        this.smokeTimer = 0.16;
-        const ox = this.housePos.x - this.house.sprite.ox + this.house.smoke.x;
-        const oy = this.housePos.y - this.house.sprite.oy + this.house.smoke.y;
-        particles.emit({ ...FX.chimneySmoke(ox, oy + 2), z: 0 });
+    const cold = clock.hour < 8.5 || clock.hour > 17;
+    this.smokeTimer -= dt;
+    const puff = this.smokeTimer <= 0;
+    if (puff) this.smokeTimer = 0.16;
+    if (this.house && cold && puff) {
+      const ox = this.housePos.x - this.house.sprite.ox + this.house.smoke.x;
+      const oy = this.housePos.y - this.house.sprite.oy + this.house.smoke.y;
+      particles.emit({ ...FX.chimneySmoke(ox, oy + 2), z: 0 });
+    }
+    // Cottages carry their own. One of Bell Row's four has no chimney entry at
+    // all, so it never smokes at any hour, in any weather — which is the whole
+    // story of that house told without a word.
+    if (puff) {
+      for (const p of this.smokers) {
+        const sm = p.def.smoke!;
+        if (!sm.allDay && !cold) continue;
+        particles.emit({ ...FX.chimneySmoke(p.x + sm.dx, p.y + sm.dy), z: 0 });
       }
     }
 

@@ -35,6 +35,10 @@ import type { ProjectDef } from './data/projects.ts';
 import { RECIPES, type RecipeDef } from './data/recipes.ts';
 import { Dialogue } from './systems/dialogue.ts';
 import { resolveInspect } from './data/inspect.ts';
+import { resolveTalk, bark as barkFor, type TalkCtx } from './data/talk.ts';
+import { TalkBook, Village } from './systems/village.ts';
+import { Barks } from './ui/bark.ts';
+import type { Npc } from './entities/npc.ts';
 import * as Save from './systems/save.ts';
 import { Music } from './systems/music.ts';
 import { FX, Particles } from './systems/particles.ts';
@@ -68,6 +72,12 @@ class Game {
   private waterSampleTimer = 0;
   /** Areas are built on first visit and kept; a bake is not cheap. */
   private worlds = new Map<string, World>();
+  private villages = new Map<string, Village>();
+  private talk = new TalkBook();
+  private barks = new Barks();
+  /** Who a bark has already been spent on today, so it is a greeting not a loop. */
+  private barked = new Set<string>();
+  private talkTarget: Npc | null = null;
   private farms = new Map<string, Farm>();
   private dropPools = new Map<string, Pickups>();
   private areaId = START_AREA;
@@ -227,10 +237,36 @@ class Game {
           for (let i = 0; i < frames; i++) this.update(FIXED_DT);
           this.render();
         },
+        village: () => {
+          const v = this.villages.get(this.areaId);
+          return v ? v.people.map((p) => ({
+            id: p.def.id, x: +p.x.toFixed(1), y: +p.y.toFixed(1),
+            tx: +(p.x / TILE).toFixed(2), ty: +(p.y / TILE).toFixed(2),
+            act: p.act, facing: p.facing, hidden: p.hidden, walking: p.walking,
+          })) : [];
+        },
+        talkTarget: () => (this.talkTarget ? this.talkTarget.def.id : null),
+        talkState: () => this.talk.serialize(),
+        speakTo: (id: string) => {
+          const v = this.villages.get(this.areaId);
+          const p = v?.byId(id);
+          if (p) this.speakTo(p);
+          return !!p;
+        },
         press: (code: string) => window.dispatchEvent(new KeyboardEvent('keydown', { code })),
         release: (code: string) => window.dispatchEvent(new KeyboardEvent('keyup', { code })),
       };
     }
+  }
+
+  /** A quieter version of the player's, with no particles of its own. */
+  private npcFootstep(x: number, y: number): void {
+    const mat = this.world.materialAt(x, y);
+    let ground: Ground = 'grass';
+    if (mat === Mat.Path || mat === Mat.Field) ground = 'dirt';
+    else if (mat === Mat.Soil) ground = 'soil';
+    else if (mat === Mat.Stone) ground = 'stone';
+    this.audio.footstep(ground, false);
   }
 
   private onFootstep(x: number, y: number): void {
@@ -280,6 +316,8 @@ class Game {
       this.worlds.set(id, world);
       this.farms.set(id, new Farm(world.map));
       this.dropPools.set(id, new Pickups());
+      const village = new Village(areaData(id));
+      if (!village.empty) this.villages.set(id, village);
       this.applyProjectsFor(id);
     }
     return world;
@@ -288,6 +326,79 @@ class Game {
   private enterAreaData(id: string): void {
     this.ensureArea(id);
     this.areaId = id;
+    // Position is a function of the hour, so arriving evaluates it rather than
+    // replaying it. An area nobody is standing in costs nothing while you are
+    // somewhere else, and there is no stored position to drift.
+    this.barks.clear();
+    this.barked.clear();
+    const v = this.villages.get(id);
+    if (v) v.snapTo(this.clock.hour, this.weather.sky, new Set(this.projects.doneList));
+  }
+
+  private get village(): Village | undefined {
+    return this.villages.get(this.areaId);
+  }
+
+  private talkCtx(id: string): TalkCtx {
+    const st = this.talk.get(id);
+    return {
+      seen: this.seen,
+      done: new Set(this.projects.doneList),
+      day: this.clock.day,
+      phase: this.clock.phase,
+      sky: this.weather.sky,
+      met: st.met,
+      lastDay: st.lastDay,
+      topics: st.topics,
+    };
+  }
+
+  /** Everyone in this area walks their day. */
+  private updateVillage(dt: number): void {
+    const v = this.village;
+    this.barks.update(dt);
+    if (!v) return;
+    v.update(dt, this.time, this.clock.hour, this.weather.sky, new Set(this.projects.doneList), false);
+    for (const p of v.people) {
+      // NPC footsteps go through the same surface-keyed path the player's do,
+      // so somebody crossing from the lane onto grass is audible as that.
+      p.onFootstep = (x, y) => this.npcFootstep(x, y);
+      // Orrin's bench, once per down-beat of the work clip. A sound arriving
+      // from a place you can see is worth more than a music cue.
+      p.onWorkBeat = (x, y) => {
+        this.audio.blip(-14, 0.03);
+        // Shavings off the bench, caught by the same wind everything else
+        // bends to. A sound and a spray from a place you can see is worth
+        // more than any amount of ambience.
+        this.particles.emit({
+          x, y: y - 12, count: 2, spread: 3,
+          vx: [-14, 14], vy: [-2, 2], vz: [6, 16],
+          life: [0.5, 0.9], size: [1, 1], gravity: 20, drag: 2.4,
+          ramp: ['cream0', 'wood0', 'wood1'], windBias: 0.8, wander: 0.5, z: 0,
+        });
+      };
+    }
+    // A greeting, once a day, when you first come near somebody. Not the box.
+    if (!this.dialogue.active && !this.transition.active) {
+      const near = v.nearest(this.player.x, this.player.y, 34);
+      if (near && !this.barked.has(near.def.id)) {
+        this.barked.add(near.def.id);
+        this.barks.show(barkFor(near.def.id, this.talkCtx(near.def.id)), () => (near.hidden ? null : { x: near.x, y: near.y }));
+      }
+    }
+  }
+
+  /** Open a conversation. A person outranks every other use of the key. */
+  private speakTo(p: Npc): void {
+    const st = this.talk.get(p.def.id);
+    const res = resolveTalk(p.def.id, this.talkCtx(p.def.id));
+    if (!res) return;
+    p.lookAt(this.player.x, this.player.y);
+    this.dialogue.say(res.lines);
+    if (res.unlock) st.topics.add(res.unlock);
+    st.met = true;
+    st.lastDay = this.clock.day;
+    this.audio.blip(2.4, 0.05);
   }
 
   /** Re-apply every finished project belonging to an area. */
@@ -424,6 +535,7 @@ class Game {
       ),
       seen: [...this.seen],
       projects: this.projects.doneList,
+      npcs: this.talk.serialize(),
     });
     if (announce) this.toast.show(ok ? 'saved' : 'could not save');
   }
@@ -464,6 +576,7 @@ class Game {
     // Restored before the areas are re-applied below, so a finished project is
     // reflected in every world the save knew about.
     this.projects.restore(data.projects);
+    this.talk.restore(data.npcs, data.clock.day);
     for (const id of this.worlds.keys()) this.applyProjectsFor(id);
     this.camera.snapTo(this.player.x, this.player.focusY);
     return true;
@@ -540,7 +653,14 @@ class Game {
     this.targetKind = this.harvestTarget
       ? (held?.tool === 'axe' ? 'chop' : 'mine')
       : this.actionAt(this.targetTx, this.targetTy);
-    this.lookTarget = this.findLookTarget(p.x, p.y);
+    const v = this.village;
+    this.talkTarget = v ? v.nearest(p.x, p.y, 24) : null;
+    if (this.talkTarget) {
+      // They turn and look at you while you are stood in front of them. It is
+      // the cheapest thing in this milestone and it does the most work.
+      this.talkTarget.lookAt(this.player.x, this.player.y);
+    }
+    this.lookTarget = this.talkTarget ? null : this.findLookTarget(p.x, p.y);
   }
 
   /** The nearest thing worth looking at — a prop, or the farmhouse door. */
@@ -579,6 +699,13 @@ class Game {
 
   /** Press E. The held item and the tile decide what happens. */
   private act(): void {
+    // A person outranks every other use of this key, including an unread
+    // inspectable and a held tool. Standing in front of Orrin with an axe and
+    // pressing E must never swing it.
+    if (this.talkTarget) {
+      this.speakTo(this.talkTarget);
+      return;
+    }
     const kind = this.targetKind;
     // Something unread directly in front of you wins over farming: standing at
     // a standing stone with a hoe and pressing E, you meant to read it. Once
@@ -774,6 +901,11 @@ class Game {
   /** Player, plants and dropped items, for the world's depth-sorted pass. */
   private buildDrawables(): Drawable[] {
     const list: Drawable[] = [this.playerDrawable];
+    // People interleave with trees, crops, drops and the player by their feet,
+    // and get their shadows laid down in the shadows-first pass, because an Npc
+    // exposes exactly the shape `playerDrawable` does.
+    const v = this.village;
+    if (v) for (const p of v.people) if (!p.hidden) list.push(p);
     let i = 0;
     for (const plot of this.farm.all) {
       if (!plot.crop) continue;
@@ -884,11 +1016,15 @@ class Game {
 
     this.clock.update(dt);
     this.weather.update(dt);
+    // Everybody in this area walks their day. Areas you are not standing in do
+    // not tick at all — they are re-evaluated from the hour when you arrive.
+    this.updateVillage(dt);
 
     // A new day: crops that were watered advance, the rest get thirstier.
     if (this.clock.day !== this.lastDay) {
       this.lastDay = this.clock.day;
       this.farm.advanceDay(this.rainedToday);
+      this.barked.clear();
       this.rainedToday = false;
       // A day is the natural unit of progress here, so it is also the natural
       // autosave point — you can never lose more than one day's work.
@@ -1018,6 +1154,11 @@ class Game {
     if (wouldRead && this.lookTarget && !this.dialogue.active) {
       drawLookHint(ctx, this.lookTarget.x, this.lookTarget.top - 5, camX, camY, this.time);
     }
+    // The same hint over somebody's head, because talking to them is the same
+    // key doing the same job.
+    if (this.talkTarget && !this.dialogue.active && !this.talkTarget.hidden) {
+      drawLookHint(ctx, this.talkTarget.x, this.talkTarget.y - 30, camX, camY, this.time);
+    }
     // Ripples belong on the water surface; splashes belong on the ground, under
     // anything standing on it.
     this.rain.drawWaterRings(ctx, this.time, this.weather.rain, camX, camY, world.isWater);
@@ -1026,6 +1167,9 @@ class Game {
       ctx, camX, camY, VIEW_W + 1, VIEW_H + 1,
       this.buildDrawables(), this.particles, clock, this.weather,
     );
+    // Over everybody, under the lighting — a slip of paper in the world, lit
+    // by the same evening the person holding it is standing in.
+    this.barks.draw(ctx, camX, camY);
 
     // Lighting last, over the finished picture.
     this.lighting.begin();

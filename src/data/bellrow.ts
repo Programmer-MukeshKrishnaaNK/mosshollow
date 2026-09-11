@@ -73,6 +73,24 @@ export const BELLROW: AreaData = {
   map: MAP,
   spawn: { tx: 20, ty: 5 },
   forestBorder: 3,
+  // The lane. Everyone routes along it, so nobody ever walks through a wall.
+  corridorY: 13.9,
+  waypoints: {
+    rue_step:    { tx: 10.4, ty: 12.5 },
+    shut_step:   { tx: 16.3, ty: 12.4 },
+    shut_bench:  { tx: 17.3, ty: 13.2 },
+    orrin_step:  { tx: 23.6, ty: 12.5 },
+    orrin_bench: { tx: 26.9, ty: 13.1 },
+    nan_step:    { tx: 30.6, ty: 12.5 },
+    nan_pots:    { tx: 31.9, ty: 13.0 },
+    nan_bench:   { tx: 33.0, ty: 13.2 },
+    well:        { tx: 20.4, ty: 14.5 },
+    frame:       { tx: 7.2, ty: 14.2 },
+    lane_west:   { tx: 9.0, ty: 13.9 },
+    lane_east:   { tx: 32.2, ty: 13.9 },
+    lane_mid:    { tx: 19.4, ty: 13.9 },
+    road_top:    { tx: 20.0, ty: 6.4 },
+  },
   exits: [
     // North, back up the spur to the homestead.
     { x: 18, y: 0, w: 4, h: 3, to: 'homestead', entryTx: 31, entryTy: 39.6, facing: 'up' },
@@ -82,13 +100,36 @@ export const BELLROW: AreaData = {
   keepClear: [
     { x: 18, y: 3, w: 4, h: 11 },  // the road down
     { x: 4, y: 12, w: 31, h: 4 },  // the lane itself
-    { x: 3, y: 11, w: 5, h: 6 },   // the west end, where the lane stops
+    { x: 3, y: 11, w: 6, h: 6 },   // the west end, and the frame that stands there
+    { x: 10, y: 13, w: 20, h: 4 }, // the well, the line and the lane furniture
     { x: 7, y: 7, w: 6, h: 6 },    // the west plot
     { x: 13, y: 7, w: 6, h: 6 },   // the plot nobody lives on
     { x: 20, y: 7, w: 7, h: 6 },   // the middle plot, and room for a shed
     { x: 27, y: 7, w: 7, h: 6 },   // the east plot
   ],
   props: [
+    // --- the row ----------------------------------------------------------
+    // West to east: Rue, the house nobody lives in, Orrin with his shed, and
+    // Nan at the end with the only door that is properly kept.
+    { def: 'cottage_rue', tx: 10.0, ty: 11.6 },
+    { def: 'cottage_empty', tx: 15.8, ty: 11.4, inspect: 'house_shut' },
+    { def: 'cottage_orrin', tx: 23.2, ty: 11.6 },
+    { def: 'shed', tx: 26.9, ty: 12.2 },
+    { def: 'offcuts', tx: 28.4, ty: 12.9, inspect: 'offcuts' },
+    { def: 'cottage_nan', tx: 30.2, ty: 11.4 },
+    { def: 'bowl', tx: 31.9, ty: 12.3, inspect: 'bowl' },
+    { def: 'bench', tx: 33.0, ty: 12.6 },
+
+    // The bench outside the house nobody uses. Nan sweeps this step too.
+    { def: 'bench', tx: 17.3, ty: 12.5, inspect: 'bench_shut' },
+
+    // --- the lane ----------------------------------------------------------
+    { def: 'well', tx: 21.4, ty: 14.9, inspect: 'well' },
+    { def: 'bellFrame', tx: 5.6, ty: 13.9, inspect: 'bell_frame' },
+    { def: 'washline', tx: 12.2, ty: 15.4, inspect: 'washline' },
+    { def: 'lantern', tx: 19.1, ty: 12.7 },
+    { def: 'lantern', tx: 28.2, ty: 15.2 },
+
     // --- the road down ----------------------------------------------------
     // Dense where it leaves the homestead's woods, open by the time the lane
     // is in sight. The road should feel like it is letting you out of

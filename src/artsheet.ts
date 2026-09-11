@@ -11,7 +11,7 @@
 
 import './style.css';
 import { PALETTE } from './art/palette.ts';
-import { ctxOf, makeCanvas, mirrored, sprite, type Sprite } from './art/pixel.ts';
+import { ctxOf, makeCanvas, mirrored, sprite, type PixelMap, type Sprite } from './art/pixel.ts';
 import { buildFarmhouse } from './art/building.ts';
 import * as P from './art/player.art.ts';
 import { buildProps, type PropDef } from './world/props.ts';
@@ -20,6 +20,9 @@ import { buildSoilTiles } from './art/soil.ts';
 import { Player } from './entities/player.ts';
 import { Input } from './core/input.ts';
 import { BELLROOT, EMBERWHEAT } from './art/crops.art.ts';
+import * as N from './art/npc.art.ts';
+import { buildCottage } from './art/cottage.ts';
+import { silhouette } from './art/pixel.ts';
 
 const W = 1280;
 const H = 720;
@@ -219,5 +222,78 @@ if (page === 5) {
   strip('can', 'down', 594);
 }
 
+if (page === 6) {
+  // The quality gate for Phase 5. Three rows of people, every facing, every
+  // frame, on light ground and dark — and then the same three as flat
+  // silhouettes. If they cannot be told apart with the colour taken away, the
+  // art is not finished, and no amount of schedule code will rescue it.
+  const CAST: { name: string; maps: PixelMap[]; poses: { m: PixelMap; n: string }[] }[] = [
+    {
+      name: 'NAN HOLLIS  — round, slow, cream and grey',
+      maps: [
+        N.NAN_DOWN_STEP_A, N.NAN_DOWN_PASS, N.NAN_DOWN_STEP_B,
+        N.NAN_SIDE_STEP_A, N.NAN_SIDE_PASS, N.NAN_SIDE_STEP_B,
+        N.NAN_UP_STEP_A, N.NAN_UP_PASS, N.NAN_UP_STEP_B,
+      ],
+      poses: [{ m: N.NAN_SWEEP_A, n: 'sweep a' }, { m: N.NAN_SWEEP_B, n: 'sweep b' }, { m: N.NAN_SIT, n: 'sit' }],
+    },
+    {
+      name: 'RUE  — thin, fast, one orange cap',
+      maps: [
+        N.RUE_DOWN_STEP_A, N.RUE_DOWN_PASS, N.RUE_DOWN_STEP_B,
+        N.RUE_SIDE_STEP_A, N.RUE_SIDE_PASS, N.RUE_SIDE_STEP_B,
+        N.RUE_UP_STEP_A, N.RUE_UP_PASS, N.RUE_UP_STEP_B,
+      ],
+      poses: [{ m: N.RUE_LEAN, n: 'lean' }],
+    },
+    {
+      name: 'ORRIN FELL  — square, still, the darkest mass in the game',
+      maps: [
+        N.ORRIN_DOWN_STEP_A, N.ORRIN_DOWN_PASS, N.ORRIN_DOWN_STEP_B,
+        N.ORRIN_SIDE_STEP_A, N.ORRIN_SIDE_PASS, N.ORRIN_SIDE_STEP_B,
+        N.ORRIN_UP_STEP_A, N.ORRIN_UP_PASS, N.ORRIN_UP_STEP_B,
+      ],
+      poses: [{ m: N.ORRIN_WORK_A, n: 'work a' }, { m: N.ORRIN_WORK_B, n: 'work b' }, { m: N.ORRIN_SIT, n: 'sit' }],
+    },
+  ];
+  const Z = 5;
+  let y = 18;
+  for (const c of CAST) {
+    label(c.name, 8, y - 8);
+    let x = 8;
+    for (let i = 0; i < c.maps.length; i++) {
+      const spr = sprite(c.maps[i], 8, 23);
+      const bg = i < 3 ? GRASS : i < 6 ? '#3d4148' : GRASS;
+      tile(spr, x, y, Z, ['A', 'pass', 'B'][i % 3] + (i < 3 ? ' dn' : i < 6 ? ' sd' : ' up'), bg);
+      x += 16 * Z + 4;
+    }
+    x += 12;
+    for (const pose of c.poses) {
+      tile(sprite(pose.m, 8, 23), x, y, Z, pose.n, '#2b2029');
+      x += 16 * Z + 4;
+    }
+    // The mirrored side, so a left-facing walk is checked rather than assumed.
+    tile(mirrored(sprite(c.maps[4], 8, 23)), x, y, Z, 'sd mirror', GRASS);
+    y += 24 * Z + 22;
+  }
+  // Silhouette test. Colour off, shape only.
+  label('SILHOUETTE — name each one without the colour', 8, y - 8, '#ffd884');
+  let sx = 8;
+  for (const c of CAST) {
+    for (const m of [c.maps[1], c.maps[4], c.maps[7]]) {
+      tile(silhouette(sprite(m, 8, 23), '#f4efdc'), sx, y, 4, '', '#22412a');
+      sx += 16 * 4 + 4;
+    }
+    sx += 22;
+  }
+  // And the buildings they live in, small, for the row read.
+  let cx = 700;
+  for (const k of ['rue', 'empty', 'orrin', 'nan'] as const) {
+    const c = buildCottage(k);
+    tile(c.sprite, cx, y - 8, 2, k, GRASS);
+    cx += 76 * 2 + 8;
+  }
+}
+
 // Page links, so the next screenshot can just navigate.
-label(`page ${page} of 5   —   /art.html?p=1..5`, 8, H - 12, '#4a833f');
+label(`page ${page} of 6   —   /art.html?p=1..6`, 8, H - 12, '#4a833f');

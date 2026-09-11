@@ -161,8 +161,10 @@ of the game.
 
 ## Status
 
-Genuinely playable end to end. Two connected areas; a farming loop from bare
+Genuinely playable end to end. Three connected areas; a farming loop from bare
 ground to a full satchel; an axe and a pick that change the world permanently;
 crafting and six building projects that rebuild the homestead in front of you;
-and a thread of environmental storytelling that pays off if you follow it.
-NPCs and quests are not built yet; see the roadmap in `docs/STATUS.md`.
+a hamlet with three people living in it who keep their own hours, react to what
+you have built, and behave differently in the rain; and a thread of
+environmental storytelling that pays off if you follow it — and then does not
+finish. Quests are not built yet; see the roadmap in `docs/STATUS.md`.
