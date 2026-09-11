@@ -7,12 +7,14 @@
  */
 
 import type { AreaData } from './area.ts';
+import { BELLROW } from './bellrow.ts';
 import { HOMESTEAD } from './homestead.ts';
 import { MEADOW } from './meadow.ts';
 
 export const AREAS: Record<string, AreaData> = {
   homestead: HOMESTEAD,
   meadow: MEADOW,
+  bellrow: BELLROW,
 };
 
 export const START_AREA = 'homestead';

@@ -77,6 +77,10 @@ export const HOMESTEAD: AreaData = {
     // East, through the gate, into the meadow. The track already ran this way;
     // now it goes somewhere.
     { x: 57, y: 20, w: 3, h: 4, to: 'meadow', entryTx: 4, entryTy: 20.6, facing: 'right' },
+    // South, down the old spur. It has run off the bottom of this map since
+    // the valley was first drawn, and the signpost at the junction has had a
+    // B cut into it the whole time.
+    { x: 29, y: 41, w: 4, h: 3, to: 'bellrow', entryTx: 20, entryTy: 4.4, facing: 'down' },
   ],
   fences: [
     // The old field, fenced on three sides. The south side fell down years ago

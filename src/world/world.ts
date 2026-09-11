@@ -145,6 +145,12 @@ export class World {
         const x = (tx + 0.5 + (rng() - 0.5) * 0.9) * TILE;
         const y = (ty + 0.5 + (rng() - 0.5) * 0.9) * TILE;
         if (this.inExit(tx, ty, 1)) continue; // a gate has to be a gate
+        // Nothing grows in the water. Where a stream runs out through the tree
+        // line this was planting oaks mid-current — forty-eight of them in the
+        // meadow, where the water leaves the map at both ends. The test is on
+        // the jittered position rather than the loop's tile, because the jitter
+        // is up to half a tile and will happily walk a trunk into the stream.
+        if (this.map.matAt(Math.floor(x / TILE), Math.floor(y / TILE)) === Mat.Water) continue;
         const onPath = this.map.matAt(tx, ty) === Mat.Path;
         if (onPath) {
           // Where the track leaves the clearing, the way is grown over rather
@@ -161,7 +167,15 @@ export class World {
         // through. Better that the deep woods simply do not yield.
         this.props[this.props.length - 1].guarded = true;
         if (edgeDist >= b - 1 && chance(rng, 0.34)) {
-          this.add(`bush${Math.floor(rng() * 3)}`, x + randRange(rng, -10, 10), y + randRange(rng, 6, 14), rng);
+          // Undergrowth sits below its tree, by up to most of a tile, so it
+          // needs the same water test the tree just passed — otherwise a bush
+          // slides off a dry bank into the stream on its own.
+          const bushId = `bush${Math.floor(rng() * 3)}`;
+          const bx = x + randRange(rng, -10, 10);
+          const by = y + randRange(rng, 6, 14);
+          if (this.map.matAt(Math.floor(bx / TILE), Math.floor(by / TILE)) !== Mat.Water) {
+            this.add(bushId, bx, by, rng);
+          }
         }
       }
     }

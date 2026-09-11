@@ -104,6 +104,25 @@ export const INSPECT: Record<string, InspectEntry> = {
     ];
   },
 
+  // --- Bell Row -----------------------------------------------------------
+
+  sign_bellrow: [
+    'BELL ROW. Cut deep into the board, and painted, once.',
+    'Underneath it, much fresher, in a hand that had to stand on something to reach: and nothing past it.',
+  ],
+
+  stump_bellrow: [
+    'Sawn flat a long time ago. The top is worn smooth and very slightly dished.',
+    'Somebody has been sitting here for years.',
+    'It faces the end of the lane. There is nothing at the end of the lane.',
+  ],
+
+  crate_bellrow: [
+    'A crate at the untidy end of the row, lid off, half full of rain.',
+    'Packing straw, a horseshoe, and a bill of carriage for four barrels, dated eleven years ago.',
+    'It was never unpacked. It was never collected either.',
+  ],
+
   stump_old: [
     'Cut clean, and a long time ago.',
     'You start counting rings out of habit and lose your place somewhere after sixty.',
