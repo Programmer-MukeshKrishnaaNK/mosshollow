@@ -124,6 +124,19 @@ export class Ledger {
     if (this.flashT > 0) this.flashT -= dt;
     if (!this.open) return;
 
+    // A tap on the world outside the panel closes it. On a phone there is no
+    // Escape key, and the alternative is hunting for a close button that would
+    // have to sit somewhere in this layout and earn its space.
+    if (
+      pointer.kind === 'touch' &&
+      pointer.released &&
+      !pointer.over(PANEL.x, PANEL.y - TAB_H, PANEL.w, PANEL.h + TAB_H) &&
+      !this.held
+    ) {
+      hooks.onClose();
+      return;
+    }
+
     // --- tabs ---------------------------------------------------------------
     for (let i = 0; i < TABS.length; i++) {
       const r = tabRect(i);
@@ -296,7 +309,14 @@ export class Ledger {
       }
     }
 
-    const hint = pointer.everUsed ? 'Tab / Esc to close' : 'Tab to switch  ·  Esc to close';
+    // The hint has to describe the device in the player's hand. A phone has
+    // no Tab and no Escape, and telling somebody to press a key they do not
+    // have is worse than saying nothing.
+    const hint = pointer.kind === 'touch'
+      ? 'tap a tab to switch  ·  tap outside to close'
+      : pointer.everUsed
+        ? 'Tab / Esc to close'
+        : 'Tab to switch  ·  Esc to close';
     drawText(ctx, hint, PANEL.x + 10, PANEL.y + PANEL.h - 12, PALETTE.wood2);
     ctx.globalAlpha = 1;
   }

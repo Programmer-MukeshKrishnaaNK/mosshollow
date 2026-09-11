@@ -47,6 +47,7 @@ import { TimeOfDay } from './systems/time.ts';
 import { Weather } from './systems/weather.ts';
 import { DebugOverlay } from './ui/debug.ts';
 import { Hotbar } from './ui/hotbar.ts';
+import { TouchControls } from './ui/touch.ts';
 import { Ledger } from './ui/ledger.ts';
 import { Menu } from './ui/menu.ts';
 import { Hud, TitleCard, Toast } from './ui/hud.ts';
@@ -88,6 +89,7 @@ class Game {
   private camera: Camera;
   private hud = new Hud();
   private hotbar = new Hotbar();
+  private touch = new TouchControls();
   private toast = new Toast();
   /** The prop the current swing is aimed at, locked in when it starts. */
   private swingProp: Prop | null = null;
@@ -167,6 +169,7 @@ class Game {
     });
 
     this.projects.bindStory(this.story);
+    this.touch.layout(VIEW_W, VIEW_H);
 
     this.playerDrawable = {
       sortY: this.player.y,
@@ -553,6 +556,7 @@ class Game {
       projects: this.projects.doneList,
       npcs: this.talk.serialize(),
       story: this.story.list,
+      volume: this.audio.volume,
     });
     if (announce) this.toast.show(ok ? 'saved' : 'could not save');
   }
@@ -595,6 +599,7 @@ class Game {
     this.projects.restore(data.projects);
     this.talk.restore(data.npcs, data.clock.day);
     this.story.restore(data.story);
+    this.audio.volume = data.volume;
     for (const id of this.worlds.keys()) this.applyProjectsFor(id);
     this.camera.snapTo(this.player.x, this.player.focusY);
     return true;
@@ -606,6 +611,34 @@ class Game {
    * ones that return before the main path runs — which is why the hotbar sat
    * visible underneath the pause menu on the first attempt.
    */
+  /**
+   * The stick and the buttons are live in every branch — including while a
+   * screen is open, because the pause button has to be pressable from inside
+   * the pause menu and the bag button has to close the bag.
+   */
+  /**
+   * The valley keeps making noise whatever is on screen, so this runs in every
+   * branch rather than only the one where the player can walk. It used to sit
+   * inside the live branch, which meant an open conversation returned before
+   * reaching it — and the ducking written to go underneath dialogue never
+   * actually ran while there was any dialogue to duck under.
+   */
+  private updateAudio(dt: number): void {
+    this.audio.update(dt, {
+      wind: this.weather.wind,
+      darkness: this.clock.darkness,
+      rain: this.weather.rain,
+      water: this.waterNearness,
+      // Silence under a line is worth more than ambience over it.
+      duck: this.dialogue.open,
+    });
+  }
+
+  private updateTouch(dt: number): void {
+    this.touch.reserve(this.hotbar.alpha > 0.4 ? this.hotbar.bounds() : null);
+    this.touch.update(dt, this.pointer, this.input);
+  }
+
   private updateHudFade(dt: number): void {
     const uiUp = this.dialogue.active || this.ledger.active || this.menu.active;
     this.hotbar.alpha = clamp(this.hotbar.alpha + (uiUp ? -dt * 6 : dt * 4), 0, this.hud.alpha);
@@ -742,7 +775,12 @@ class Game {
         this.seen.add(this.lookTarget.key);
         // Reading the slate is the beat, not lifting the stone. You have to
         // actually look at what you found.
-        if (this.lookTarget.key === 'bell_found') this.story.mark('the_note');
+        if (this.lookTarget.key === 'bell_found' && !this.story.has('the_note')) {
+          this.story.mark('the_note');
+          // The one bell in the game, struck once. It is the only moment the
+          // score is deliberately interrupted rather than accompanied.
+          this.audio.bellTone(0.55);
+        }
         this.audio.blip(2, 0.04);
         return;
       }
@@ -968,6 +1006,12 @@ class Game {
 
   private update(dt: number): void {
     this.time += dt;
+    // Gathered before anything reads it. This sat further down at first and
+    // the touch buttons registered their press a frame after the checks that
+    // consume it, so the bag button did nothing at all: input has to be
+    // collected at the top of the frame, not in the middle of it.
+    this.updateTouch(dt);
+    this.updateAudio(dt);
 
     // --- screens, in priority order ---------------------------------------
     // Each one takes the keyboard entirely while it is up. Anything below it
@@ -977,6 +1021,12 @@ class Game {
       onResume: () => { this.menu.hide(); this.audio.blip(2, 0.04); },
       onStartOver: () => this.startOver(),
       onCursor: () => this.audio.blip(6, 0.03),
+      volume: () => this.audio.volume,
+      setVolume: (v: number) => {
+        this.audio.volume = v;
+        this.audio.blip(4, 0.05);
+        this.saveGame(false);
+      },
       status: () => `${this.world.data.name} · Day ${this.clock.day} · ${this.clock.label}`,
     });
     if (this.menu.open) {
@@ -1034,6 +1084,15 @@ class Game {
     // The hotbar steps aside while the box is open; it is the one piece of UI
     // that would sit directly behind it.
     this.updateHudFade(dt);
+    // Tap a slot to hold it. The hotbar is the one piece of HUD a finger has a
+    // reason to reach for, and hunting for a number row on a phone is not it.
+    if (this.touch.enabled && this.pointer.released && !this.touch.consumes(this.pointer.x, this.pointer.y)) {
+      const slot = this.hotbar.slotAt(this.pointer.x, this.pointer.y);
+      if (slot >= 0 && this.hotbar.alpha > 0.5) {
+        this.inventory.select(slot);
+        this.audio.blip(6, 0.03);
+      }
+    }
 
     this.clock.update(dt);
     this.weather.update(dt);
@@ -1134,12 +1193,6 @@ class Game {
       this.waterSampleTimer = 0.3;
       this.waterNearness = this.world.waterProximity(this.player.x, this.player.y);
     }
-    this.audio.update(dt, {
-      wind: this.weather.wind,
-      darkness: this.clock.darkness,
-      rain: this.weather.rain,
-      water: this.waterNearness,
-    });
     this.music.update(this.clock.darkness, this.weather.rain, this.title.dismissed ? 1 : 0.4);
     this.camera.follow(this.player.x, this.player.focusY, this.player.vx, this.player.vy, dt);
 
@@ -1221,14 +1274,24 @@ class Game {
     const uctx = renderer.uctx;
     drawVignette(uctx, VIEW_W, VIEW_H, 0.18 + clock.darkness * 0.12);
     this.hud.draw(uctx, clock);
+    this.hotbar.touch = this.touch.enabled;
     this.hotbar.draw(uctx, this.inventory, VIEW_W, VIEW_H, this.time);
     this.toast.draw(uctx, VIEW_W, VIEW_H);
     drawDialogue(uctx, this.dialogue, VIEW_W, VIEW_H, this.time);
     this.ledger.draw(uctx, VIEW_W, VIEW_H, this.ledgerHooks(), this.pointer, this.time);
+    // Under the menus, over the world: the stick should never sit on top of a
+    // panel you are reading, but it must stay visible while you play.
+    if (!this.ledger.active && !this.menu.active) this.touch.draw(uctx);
     this.menu.draw(uctx, VIEW_W, VIEW_H, this.pointer, {
       onResume: () => {},
       onStartOver: () => {},
       onCursor: () => {},
+      volume: () => this.audio.volume,
+      setVolume: (v: number) => {
+        this.audio.volume = v;
+        this.audio.blip(4, 0.05);
+        this.saveGame(false);
+      },
       status: () => `${this.world.data.name} · Day ${this.clock.day} · ${this.clock.label}`,
     });
     if (this.transition.cover > 0.001) {

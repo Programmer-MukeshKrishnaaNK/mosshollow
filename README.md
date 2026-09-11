@@ -35,9 +35,27 @@ save.
 | `I` | open the satchel |
 | `Tab` | switch tabs while it's open |
 | `Esc` | pause menu, or close what's in front of you |
-| mouse / touch | everything in the interface |
+| mouse | everything in the interface |
 | `` ` `` | debug overlay (press again for collision boxes, again to hide) |
 | `T` | step the clock on an hour *(development)* |
+
+### On a phone
+
+Touch the screen once and the controls appear. They stay out of the way until
+then, so a mouse player never sees them.
+
+| | |
+|---|---|
+| left half | put your thumb down anywhere — the stick appears there |
+| how far you push | how fast you walk |
+| **E** | look at things, use what you're holding |
+| **BAG** | open and close the satchel |
+| **&#124;&#124;** *(top right)* | pause |
+| tap a hotbar slot | choose it |
+| tap outside a panel | close it |
+
+The game fills the screen and letterboxes the sides. Both hands work at once:
+you can walk and swing without lifting a thumb.
 
 ## What's in it right now
 

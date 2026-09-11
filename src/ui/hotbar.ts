@@ -18,12 +18,40 @@ import { drawText, drawTextShadowed, textWidth } from './font.ts';
 
 const SLOT = 20;
 const GAP = 2;
+/**
+ * A finger needs more than twenty pixels. On touch the bar grows and the gaps
+ * grow with it, which costs width the layout has to spare and buys a target a
+ * thumb can actually hit without looking.
+ */
+const TOUCH_SLOT = 26;
+const TOUCH_GAP = 3;
 
 export class Hotbar {
   alpha = 0;
+  /** Set by the game each frame. Grows the slots for a finger. */
+  touch = false;
+  /** Where each slot ended up last frame, so a tap can be hit-tested. */
+  private rects: { x: number; y: number; w: number; h: number }[] = [];
   /** Counts down after a selection change; the label rides on it. */
   private labelTime = 0;
   private lastSelected = -1;
+
+  /** The whole bar's footprint, so the touch layer can keep its hands off it. */
+  bounds(): { x: number; y: number; w: number; h: number } | null {
+    if (!this.rects.length) return null;
+    const first = this.rects[0];
+    const last = this.rects[this.rects.length - 1];
+    return { x: first.x, y: first.y, w: last.x + last.w - first.x, h: first.h };
+  }
+
+  /** Which slot a point falls in, or -1. Used for tap-to-select on touch. */
+  slotAt(x: number, y: number): number {
+    for (let i = 0; i < this.rects.length; i++) {
+      const r = this.rects[i];
+      if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return i;
+    }
+    return -1;
+  }
 
   update(dt: number, inv: Inventory): void {
     if (inv.selected !== this.lastSelected) {
@@ -38,32 +66,36 @@ export class Hotbar {
     const prev = ctx.globalAlpha;
     ctx.globalAlpha = prev * this.alpha;
 
-    const totalW = HOTBAR_SIZE * SLOT + (HOTBAR_SIZE - 1) * GAP;
+    const slotW = this.touch ? TOUCH_SLOT : SLOT;
+    const gap = this.touch ? TOUCH_GAP : GAP;
+    const totalW = HOTBAR_SIZE * slotW + (HOTBAR_SIZE - 1) * gap;
     const x0 = Math.round((viewW - totalW) / 2);
-    const y0 = viewH - SLOT - 8;
+    const y0 = viewH - slotW - (this.touch ? 6 : 8);
+    this.rects.length = 0;
 
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const slot = inv.slots[i];
       const selected = i === inv.selected;
-      const x = x0 + i * (SLOT + GAP);
+      const x = x0 + i * (slotW + gap);
       const y = selected ? y0 - 2 : y0;
+      this.rects.push({ x, y: y0 - 2, w: slotW, h: slotW + 4 });
 
       // A slot that just received something pulses briefly.
       const fresh = inv.lastChanged === i ? clamp(1 - (time - inv.lastChangedAt) / 0.45, 0, 1) : 0;
 
-      drawSlot(ctx, x, y, selected, fresh);
+      drawSlot(ctx, x, y, selected, fresh, slotW);
 
       if (slot.id) {
         const def = item(slot.id);
         const icon = def.icon;
         ctx.drawImage(
           icon.canvas,
-          x + Math.round((SLOT - icon.w) / 2),
-          y + Math.round((SLOT - icon.h) / 2) + 1,
+          x + Math.round((slotW - icon.w) / 2),
+          y + Math.round((slotW - icon.h) / 2) + 1,
         );
         if (slot.count > 1) {
           const label = String(slot.count);
-          drawTextShadowed(ctx, label, x + SLOT - textWidth(label) - 2, y + SLOT - 9, PALETTE.wood3, PALETTE.cream0);
+          drawTextShadowed(ctx, label, x + slotW - textWidth(label) - 2, y + slotW - 9, PALETTE.wood3, PALETTE.cream0);
         }
       }
 
@@ -89,7 +121,7 @@ export class Hotbar {
   }
 }
 
-function drawSlot(ctx: CanvasRenderingContext2D, x: number, y: number, selected: boolean, fresh: number): void {
+function drawSlot(ctx: CanvasRenderingContext2D, x: number, y: number, selected: boolean, fresh: number, SLOT: number): void {
   const rect = (rx: number, ry: number, rw: number, rh: number, c: string): void => {
     ctx.fillStyle = c;
     ctx.fillRect(rx, ry, rw, rh);

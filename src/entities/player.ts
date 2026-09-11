@@ -217,11 +217,15 @@ export class Player {
     let iy = locked ? 0 : input.axisY();
     this.running = !locked && input.isDown('run');
 
-    // Normalise diagonals so corners are not a speed boost.
-    if (ix !== 0 && iy !== 0) {
-      const inv = Math.SQRT1_2;
-      ix *= inv;
-      iy *= inv;
+    // Clamp the input vector to the unit circle rather than normalising the
+    // diagonal case specially. With a keyboard this is identical — two keys
+    // give a length of root two and it scales back to one — but it also means
+    // a thumbstick pushed halfway walks at half speed instead of snapping to
+    // full, which is the whole reason an analog stick is worth having.
+    const mag = Math.hypot(ix, iy);
+    if (mag > 1) {
+      ix /= mag;
+      iy /= mag;
     }
 
     const target = this.running ? RUN_SPEED : WALK_SPEED;

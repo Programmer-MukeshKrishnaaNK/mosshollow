@@ -4,12 +4,12 @@ Updated: 2026-09-11
 
 ## Current build
 
-Phases 1 to 7 complete, plus persistence — the visual foundation, the
+Phases 1 to 8 complete, plus persistence — the visual foundation, the
 atmosphere over it, a farming loop you can run start to finish, a progression
 system that rebuilds the place in front of you, a settlement with people living
 in it, an answer to the question the valley has been asking since the first
-standing stone, and a save that survives being handed a file it was not
-expecting.
+standing stone, a save that survives being handed a file it was not expecting,
+and a touch layer that makes the whole of it playable with two thumbs.
 
 A note on the numbering, because it was wrong for a while: two substantial
 milestones — save/load (`7cf8739`) and the dialogue system (`75f356f`) — were
@@ -108,10 +108,23 @@ bucket. It is now built.
   follow it without a journal then the writing is wrong and a journal would
   only hide that. It ends with an answer to the human question and one
   instruction nobody has had to obey
+- Touch: a floating analog thumbstick that appears under the thumb, an action
+  cluster, a touch-sized hotbar you can tap to select from, tap-outside to
+  close a panel, and hints that name the device in your hand rather than a key
+  it does not have. Multi-touch, so the stick and a button work at once
+- A sound setting in the pause menu, five steps, adjusted in place — the last
+  item on the deferred list from Phase 1
 - Debug overlay, art sheet (6 pages incl. an animation filmstrip and the NPC
   silhouette gate), deterministic dev stepper with pause/resume
 
-**Measured:** 5.2-6.2 ms/frame in the homestead — day, night, raining, and with
+**Measured after the polish pass:** 4.9 ms/frame in the homestead, 5.6 in Bell
+Row with all three residents walking, 4.4 in the meadow, 6.0 worst case in rain,
+5.6 with the satchel open. At a 844x390 phone viewport: 3.6 homestead, 5.5 Bell
+Row, 5.7 in rain. All against a 16.7 ms budget. 27 MB heap with all three areas
+held. Audio measured at the master bus: 0.047 RMS on a clear day, 0.116 in
+rain, peak 0.58 on the bell against a 0.39 ambient bed, nothing above unity.
+
+**Previously measured:** 5.2-6.2 ms/frame in the homestead — day, night, raining, and with
 any interface screen open — against a 16.7 ms budget; 2.4 ms in the meadow;
 6.2-6.3 ms in Bell Row across day, dusk, rain and night with all three
 residents walking their day. 14.5 MB heap with all three areas built and held.
@@ -128,7 +141,8 @@ plots, absurd numbers — all load without a single throw. Production bundle
 
 ## Current milestone
 
-Phase 8 — polish. Everything is built; now it has to be worth replaying.
+None outstanding. The roadmap is finished: Phases 1 to 8 are built, tested and
+pushed. What is left is listed under Next task, and none of it is a phase.
 
 ## Known issues
 
@@ -308,6 +322,30 @@ not belong in this game); procedural cave levels (scope).
   is not, and will not be. A mystery that is fully accounted for stops being
   one, and the valley has been built on exactly three facts and no explanation
   since the first standing stone.
+- **The stick floats and is analog.** A stick painted at a fixed spot is a
+  stick you miss, and you miss it while something is walking towards you. The
+  player's movement clamps to the unit circle rather than normalising the
+  diagonal case, so pushing halfway walks at half speed for free.
+- **Integer scaling only above 2x.** Under that there is no whole number worth
+  taking, and rounding 1.44 down to 1 on a phone left the game sitting in the
+  middle of the screen at half its width — a worse crime against the art than a
+  fractional composite that a phone's pixel density makes invisible.
+- **Input is gathered at the top of the frame.** The touch layer originally ran
+  next to the HUD fade, which is after the checks that consume a press, so the
+  bag button did nothing at all.
+- **A held touch button is one press.** Clearing the held set every frame made
+  a held button look like a fresh press sixty times a second, and the bag
+  button opened and closed the satchel on alternate frames.
+- **The stick zone is cut around the hotbar.** Without it the bar's left-hand
+  slots sat inside the zone and tapping one started a thumb drag instead of
+  choosing a tool.
+- **Ambience runs in every branch.** The audio update lived inside the live
+  branch, so an open conversation returned before reaching it and the ducking
+  written to go underneath dialogue never ran while there was dialogue to duck
+  under.
+- **A duck you cannot hear is not a duck, and one you cannot hear past is a
+  fault.** Measured at 13% and then at 85% before settling near 60%: the
+  weather should step back, not disappear.
 - **A version newer than this build is refused outright.** Reading it would
   silently discard whatever it knows that this build does not, and then write
   the loss back on the next autosave.

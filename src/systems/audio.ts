@@ -34,11 +34,25 @@ export interface AudioState {
   water: number;
   /** Master mute, e.g. while a menu is open. */
   muted?: boolean;
+  /**
+   * 0..1. How far to pull the *ambience and music* down without touching the
+   * sound effects — used while somebody is talking. A conversation in a valley
+   * this noisy was competing with its own weather, and the cheapest way to make
+   * words feel important is to take the room away from underneath them.
+   */
+  duck?: number;
 }
 
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  private musicBus: GainNode | null = null;
+  /**
+   * The player's setting, 0..1. Deferred since Phase 1 and listed as such in
+   * the status file every milestone since; a game you cannot turn down is a
+   * game people play on mute.
+   */
+  volume = 0.7;
   private ambienceBus!: GainNode;
   private sfxBus!: GainNode;
   private noise!: AudioBuffer;
@@ -69,7 +83,17 @@ export class GameAudio {
 
     this.master = ctx.createGain();
     this.master.gain.value = 0;
-    this.master.connect(ctx.destination);
+    // A gentle limiter on the way out. Nothing in this game is mixed loudly,
+    // but the bell sums seven partials and measured a peak of 1.05 — it
+    // clipped. Catching it here means a future sound cannot reintroduce the
+    // same fault, and at these levels the limiter is otherwise inaudible.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -6;
+    limiter.knee.value = 6;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.18;
+    this.master.connect(limiter).connect(ctx.destination);
     // Fade the whole mix up, so enabling audio is never a click in the ear.
     this.master.gain.linearRampToValueAtTime(0.85, ctx.currentTime + 1.4);
 
@@ -135,7 +159,19 @@ export class GameAudio {
     const t = this.ctx.currentTime;
     const gust = Math.abs(s.wind);
 
-    this.master.gain.setTargetAtTime(s.muted ? 0 : 0.85, t, 0.15);
+    // One master, scaled by the player's setting. Ambience and music sit on
+    // their own bus underneath it so they can be ducked without the footsteps
+    // and the axe going quiet with them.
+    this.master.gain.setTargetAtTime(s.muted ? 0 : 0.85 * this.volume, t, 0.15);
+    // Tuned by measurement, twice. At 0.62 the change was thirteen percent and
+    // audible only to a meter; at 0.85 the valley vanished, which reads as the
+    // sound having broken rather than as somebody speaking. This sits near
+    // sixty percent: the weather is still there, it has just stepped back.
+    const duck = 1 - (s.duck ?? 0) * 0.6;
+    this.ambienceBus.gain.setTargetAtTime(duck, t, 0.22);
+    // The score goes further down than the weather: a line of dialogue over a
+    // melody is a competition, over wind it is a scene.
+    if (this.musicBus) this.musicBus.gain.setTargetAtTime(1 - (s.duck ?? 0) * 0.85, t, 0.3);
 
     // Wind gets louder and brighter as it picks up. Rain masks it.
     const windLevel = (0.012 + gust * 0.055) * (1 - s.rain * 0.4);
@@ -316,8 +352,71 @@ export class GameAudio {
     return this.ctx;
   }
 
+  /**
+   * Music gets its own bus rather than going straight to the master, so a
+   * conversation can duck the score without ducking the axe.
+   */
   get musicDestination(): GainNode | null {
-    return this.started ? this.master : null;
+    if (!this.started || !this.ctx) return null;
+    if (!this.musicBus) {
+      this.musicBus = this.ctx.createGain();
+      this.musicBus.gain.value = 1;
+      this.musicBus.connect(this.master);
+    }
+    return this.musicBus;
+  }
+
+  /**
+   * A struck bronze bell. There is exactly one of these in the game and it is
+   * the moment the valley's question gets its answer, so it is the only sound
+   * here built from a real partial series rather than one oscillator: a bell's
+   * character is entirely in its inharmonic overtones, and a sine with a decay
+   * envelope sounds like a doorbell.
+   */
+  bellTone(level = 0.5): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.started) return;
+    const t = ctx.currentTime;
+    const out = ctx.createGain();
+    // Seven partials do not sum to one. Normalising by their total keeps the
+    // strike under unity however many of them there are.
+    const TOTAL = 2.68;
+    out.gain.value = level / TOTAL;
+    out.connect(this.sfxBus);
+    // Hum, prime, tierce, quint, nominal — the ratios a founder tunes for.
+    const partials: [number, number, number][] = [
+      [0.5, 0.5, 5.5],
+      [1.0, 1.0, 4.6],
+      [1.2, 0.42, 3.4],
+      [1.5, 0.26, 2.6],
+      [2.0, 0.3, 2.0],
+      [2.5, 0.12, 1.3],
+      [3.0, 0.08, 0.9],
+    ];
+    const base = 196;
+    for (const [ratio, amp, decay] of partials) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = base * ratio;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(amp, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+      osc.connect(g).connect(out);
+      osc.start(t);
+      osc.stop(t + decay + 0.05);
+    }
+    // The strike itself: a scrape of noise that is gone before you place it.
+    const n = ctx.createBufferSource();
+    n.buffer = makeNoiseBuffer(ctx, 0.12);
+    const nf = ctx.createBiquadFilter();
+    nf.type = 'bandpass';
+    nf.frequency.value = 2400;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime((level / TOTAL) * 0.9, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    n.connect(nf).connect(ng).connect(out);
+    n.start(t);
   }
 }
 

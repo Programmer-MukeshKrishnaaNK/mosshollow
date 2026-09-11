@@ -18,6 +18,18 @@
 
 export type PointerKind = 'mouse' | 'touch' | 'pen';
 
+/** One live contact, in game coordinates. Fingers only — a mouse is never here. */
+export interface Touch {
+  id: number;
+  x: number;
+  y: number;
+  /** Where this contact began, which is what a floating thumbstick needs. */
+  startX: number;
+  startY: number;
+  /** True on the frame it began. */
+  fresh: boolean;
+}
+
 export class Pointer {
   /** Position in game coordinates. Clamped to the surface. */
   x = 0;
@@ -39,6 +51,15 @@ export class Pointer {
   everUsed = false;
   /** Scroll wheel delta accumulated this frame, in notches. */
   wheel = 0;
+  /**
+   * Every finger currently on the glass, keyed by pointerId. The single-pointer
+   * fields above still track the primary contact and every existing panel keeps
+   * using them; this is here because a thumbstick and a button have to be
+   * pressable at the same time, and one pointer cannot express that.
+   */
+  readonly touches = new Map<number, Touch>();
+  /** True once a finger has been used. Latches: the controls should not flicker. */
+  touchUsed = false;
 
   private surface: HTMLCanvasElement | null = null;
   private viewW = 1;
@@ -88,10 +109,28 @@ export class Pointer {
     this.y = Math.min(this.viewH - 1, Math.max(0, (ev.clientY - rect.top) / sy));
   }
 
+  /** Game coordinates for an arbitrary event, without disturbing the primary. */
+  private pointAt(ev: PointerEvent): { x: number; y: number } {
+    const c = this.surface;
+    if (!c) return { x: 0, y: 0 };
+    const rect = c.getBoundingClientRect();
+    const sx = rect.width / this.viewW;
+    const sy = rect.height / this.viewH;
+    return {
+      x: Math.min(this.viewW - 1, Math.max(0, (ev.clientX - rect.left) / sx)),
+      y: Math.min(this.viewH - 1, Math.max(0, (ev.clientY - rect.top) / sy)),
+    };
+  }
+
   private onDown = (ev: PointerEvent): void => {
     this.kind = (ev.pointerType as PointerKind) || 'mouse';
     this.hovering = this.kind === 'mouse' || this.kind === 'pen';
     this.everUsed = true;
+    if (this.kind === 'touch') {
+      this.touchUsed = true;
+      const p = this.pointAt(ev);
+      this.touches.set(ev.pointerId, { id: ev.pointerId, x: p.x, y: p.y, startX: p.x, startY: p.y, fresh: true });
+    }
     this.toGame(ev);
     this.down = true;
     this.pressed = true;
@@ -105,10 +144,17 @@ export class Pointer {
     this.kind = (ev.pointerType as PointerKind) || 'mouse';
     this.hovering = this.kind === 'mouse' || this.kind === 'pen';
     this.everUsed = true;
+    const t = this.touches.get(ev.pointerId);
+    if (t) {
+      const p = this.pointAt(ev);
+      t.x = p.x;
+      t.y = p.y;
+    }
     this.toGame(ev);
   };
 
   private onUp = (ev: PointerEvent): void => {
+    this.touches.delete(ev.pointerId);
     if (!this.down) return;
     this.toGame(ev);
     this.down = false;
@@ -147,5 +193,6 @@ export class Pointer {
     this.pressed = false;
     this.released = false;
     this.wheel = 0;
+    for (const t of this.touches.values()) t.fresh = false;
   }
 }

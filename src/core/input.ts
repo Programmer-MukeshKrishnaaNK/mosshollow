@@ -59,6 +59,15 @@ const BINDINGS: Record<string, Action> = {
 const SWALLOW = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab']);
 
 export class Input {
+  /**
+   * An analog vector from the on-screen stick, when there is one. Keyboard is
+   * still the source of truth whenever a key is down: a player with both a
+   * keyboard and a touchscreen should never find the stick fighting them.
+   */
+  stickX = 0;
+  stickY = 0;
+  /** Actions the touch layer is holding. Edges are derived, not re-fired. */
+  private touchHeld = new Set<Action>();
   private held = new Set<Action>();
   private pressedThisFrame = new Set<Action>();
   private releasedThisFrame = new Set<Action>();
@@ -103,7 +112,26 @@ export class Input {
   };
 
   isDown(action: Action): boolean {
-    return this.held.has(action);
+    return this.held.has(action) || this.touchHeld.has(action);
+  }
+
+  /**
+   * Replace the whole set of touch-held actions for this frame.
+   *
+   * Edges are computed by diffing against last frame rather than by clearing
+   * and re-adding. Clearing every frame made a *held* button look like a fresh
+   * press sixty times a second, which meant the bag button opened and closed
+   * the satchel on alternate frames and a held action button re-triggered
+   * continuously. A button held down is one press and then nothing.
+   */
+  setTouchHeld(next: ReadonlySet<Action>): void {
+    for (const a of next) {
+      if (!this.touchHeld.has(a) && !this.held.has(a)) this.pressedThisFrame.add(a);
+    }
+    for (const a of this.touchHeld) {
+      if (!next.has(a) && !this.held.has(a)) this.releasedThisFrame.add(a);
+    }
+    this.touchHeld = new Set(next);
   }
 
   wasPressed(action: Action): boolean {
@@ -116,15 +144,17 @@ export class Input {
 
   /** -1, 0 or 1. Ties break toward the most recently pressed direction. */
   axisX(): number {
-    const l = this.isDown('left');
-    const r = this.isDown('right');
+    const l = this.held.has('left');
+    const r = this.held.has('right');
+    if (!l && !r && this.stickX !== 0) return this.stickX;
     if (l && r) return this.lastHorizontal === 'left' ? -1 : 1;
     return l ? -1 : r ? 1 : 0;
   }
 
   axisY(): number {
-    const u = this.isDown('up');
-    const d = this.isDown('down');
+    const u = this.held.has('up');
+    const d = this.held.has('down');
+    if (!u && !d && this.stickY !== 0) return this.stickY;
     if (u && d) return this.lastVertical === 'up' ? -1 : 1;
     return u ? -1 : d ? 1 : 0;
   }

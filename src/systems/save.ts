@@ -65,6 +65,8 @@ export interface SaveData {
    * file older than version 4, which simply means the thread has not started.
    */
   story: string[];
+  /** Sound level, 0..1. Absent in older files, which default to the same 0.7. */
+  volume: number;
 }
 
 export interface NpcSave {
@@ -235,6 +237,7 @@ export function read(): SaveData | null {
     areas: readAreas(root, version),
     npcs: readNpcs(root),
     story: arr(root.story).filter((k): k is string => typeof k === 'string').slice(0, 64),
+    volume: Math.max(0, Math.min(1, num(root.volume, 0.7))),
     seen: arr(root.seen).filter((k): k is string => typeof k === 'string'),
     projects: arr(root.projects).filter((k): k is string => typeof k === 'string'),
   };

@@ -23,9 +23,12 @@ export interface MenuHooks {
   onCursor(): void;
   /** Line shown under the title: where and when you are. */
   status(): string;
+  /** 0..1. Read and written by the volume row. */
+  volume(): number;
+  setVolume(v: number): void;
 }
 
-const PANEL = { w: 178, h: 104 };
+const PANEL = { w: 178, h: 122 };
 const BTN_H = 18;
 
 export class Menu {
@@ -54,7 +57,7 @@ export class Menu {
     // On the confirmation screen the harmless option is first, and therefore
     // the one the cursor starts on.
     return this.screen === 'root'
-      ? ['Resume', 'Start over']
+      ? ['Resume', 'Sound', 'Start over']
       : ['Keep the valley', 'Start over'];
   }
 
@@ -73,6 +76,21 @@ export class Menu {
       hooks.onCursor();
     }
 
+    // The sound row is adjusted in place rather than opening a sub-screen:
+    // one row, left and right, five steps. A slider you have to drag is a
+    // slider nobody can hit on a phone.
+    if (this.screen === 'root' && this.cursor === 1) {
+      const step = 0.2;
+      if (input.wasPressed('left')) {
+        hooks.setVolume(Math.max(0, Math.round((hooks.volume() - step) * 100) / 100));
+        hooks.onCursor();
+      }
+      if (input.wasPressed('right')) {
+        hooks.setVolume(Math.min(1, Math.round((hooks.volume() + step) * 100) / 100));
+        hooks.onCursor();
+      }
+    }
+
     let chosen = -1;
     for (let i = 0; i < opts.length; i++) {
       const r = buttonRect(i, viewW, viewH, this.screen);
@@ -84,7 +102,13 @@ export class Menu {
     if (chosen < 0) return;
     if (this.screen === 'root') {
       if (chosen === 0) hooks.onResume();
-      else {
+      else if (chosen === 1) {
+        // Clicking the row cycles it, so a pointer or a finger can change it
+        // without needing the arrow keys at all.
+        const next = hooks.volume() >= 0.999 ? 0 : Math.min(1, Math.round((hooks.volume() + 0.2) * 100) / 100);
+        hooks.setVolume(next);
+        hooks.onCursor();
+      } else {
         this.screen = 'confirm';
         this.cursor = 0;
         hooks.onCursor();
@@ -133,8 +157,30 @@ export class Menu {
       const focused = i === this.cursor;
       const hot = pointer.hovering && pointer.over(r.x, r.y, r.w, r.h);
       // The destructive option is the only red thing in the interface.
-      const danger = (this.screen === 'root' && i === 1) || (confirm && i === 1);
+      const danger = (this.screen === 'root' && i === 2) || (confirm && i === 1);
       drawButton(ctx, r.x, r.y, r.w, r.h, opts[i], focused || hot, danger);
+      // Five squares, filled to the setting. A number would be more precise
+      // and would tell the player nothing they can hear.
+      if (this.screen === 'root' && i === 1) {
+        const v = hooks.volume();
+        const pips = 5;
+        const pw = 7;
+        const gap = 3;
+        const totalW = pips * pw + (pips - 1) * gap;
+        const px = r.x + r.w - totalW - 9;
+        const py = r.y + Math.round((r.h - 6) / 2);
+        for (let p = 0; p < pips; p++) {
+          const on = v > p / pips + 0.001;
+          const bx = px + p * (pw + gap);
+          ctx.fillStyle = PALETTE.wood3;
+          ctx.fillRect(bx - 1, py - 1, pw + 2, 8);
+          ctx.fillStyle = on ? PALETTE.gold : PALETTE.cream1;
+          ctx.fillRect(bx, py, pw, 6);
+        }
+        if (v <= 0.001) {
+          drawText(ctx, 'off', px - textWidth('off') - 6, py, PALETTE.wood2);
+        }
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -143,9 +189,10 @@ export class Menu {
 function buttonRect(i: number, viewW: number, viewH: number, screen: MenuScreen): { x: number; y: number; w: number; h: number } {
   const confirm = screen === 'confirm';
   const h = confirm ? PANEL.h + 30 : PANEL.h;
+  const rows = confirm ? 2 : 3;
   const x = Math.round((viewW - PANEL.w) / 2);
   const y = Math.round((viewH - h) / 2);
-  const top = y + h - 12 - (2 - i) * (BTN_H + 4);
+  const top = y + h - 12 - (rows - i) * (BTN_H + 4);
   return { x: x + 14, y: top, w: PANEL.w - 28, h: BTN_H };
 }
 

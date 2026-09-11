@@ -15,6 +15,8 @@ import { clamp } from '../core/math.ts';
 const OUT = 0.28;
 const IN = 0.42;
 
+const smooth = (t: number): number => t * t * (3 - 2 * t);
+
 export type Phase = 'idle' | 'out' | 'in';
 
 export class Transition {
@@ -29,8 +31,12 @@ export class Transition {
 
   /** 0 = clear, 1 = black. */
   get cover(): number {
-    if (this.phase === 'out') return clamp(this.t / OUT, 0, 1);
-    if (this.phase === 'in') return 1 - clamp(this.t / IN, 0, 1);
+    // Eased rather than linear. A linear fade spends the same time at every
+    // value, so it reads as a mechanism moving at a constant rate; a
+    // smoothstep leaves and arrives gently and only hurries through the middle,
+    // which is what a fade in a film does and why nobody notices one.
+    if (this.phase === 'out') return smooth(clamp(this.t / OUT, 0, 1));
+    if (this.phase === 'in') return 1 - smooth(clamp(this.t / IN, 0, 1));
     return 0;
   }
 
