@@ -35,6 +35,11 @@ export class Projects {
     return [...this.completed];
   }
 
+  /** How many are finished, without copying the list to find out. */
+  get doneCount(): number {
+    return this.completed.size;
+  }
+
   isDone(id: string): boolean {
     return this.completed.has(id);
   }

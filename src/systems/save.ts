@@ -27,7 +27,7 @@ import type { Slot } from './inventory.ts';
 import type { Sky } from './weather.ts';
 import type { PropChange } from '../world/props.ts';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 const KEY = 'mosshollow.save';
 /** Where version 1 lived. Read once, migrated, and then left alone. */
 const LEGACY_KEY = 'mosshollow.save.v1';
@@ -67,6 +67,14 @@ export interface SaveData {
   story: string[];
   /** Sound level, 0..1. Absent in older files, which default to the same 0.7. */
   volume: number;
+  /**
+   * Objectives that have come true. Everything the guidance card shows is
+   * asked of state that already exists — what you have read, built, grown and
+   * been told — so this stores only the *latch*: "you have planted a crop"
+   * stops being visible in the world the moment you harvest it, and a guide
+   * that un-completes itself is worse than no guide.
+   */
+  objectives: string[];
 }
 
 export interface NpcSave {
@@ -238,6 +246,7 @@ export function read(): SaveData | null {
     npcs: readNpcs(root),
     story: arr(root.story).filter((k): k is string => typeof k === 'string').slice(0, 64),
     volume: Math.max(0, Math.min(1, num(root.volume, 0.7))),
+    objectives: arr(root.objectives).filter((k): k is string => typeof k === 'string').slice(0, 64),
     seen: arr(root.seen).filter((k): k is string => typeof k === 'string'),
     projects: arr(root.projects).filter((k): k is string => typeof k === 'string'),
   };

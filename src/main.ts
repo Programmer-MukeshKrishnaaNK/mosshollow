@@ -39,6 +39,8 @@ import { resolveInspect } from './data/inspect.ts';
 import { resolveTalk, bark as barkFor, type TalkCtx } from './data/talk.ts';
 import { TalkBook, Village } from './systems/village.ts';
 import { Story, type Beat } from './systems/story.ts';
+import { Objectives, type ObjectiveCtx } from './systems/objectives.ts';
+import { ObjectiveCard } from './ui/objectives.ts';
 import { Barks } from './ui/bark.ts';
 import type { Npc } from './entities/npc.ts';
 import * as Save from './systems/save.ts';
@@ -94,6 +96,8 @@ class Game {
   private villages = new Map<string, Village>();
   private talk = new TalkBook();
   private story = new Story();
+  private objectives = new Objectives();
+  private objectiveCard = new ObjectiveCard();
   private barks = new Barks();
   /** Who a bark has already been spent on today, so it is a greeting not a loop. */
   private barked = new Set<string>();
@@ -645,6 +649,7 @@ class Game {
       projects: this.projects.doneList,
       npcs: this.talk.serialize(),
       story: this.story.list,
+      objectives: this.objectives.list,
       volume: this.audio.volume,
     });
     if (announce) this.toast.show(ok ? 'saved' : 'could not save');
@@ -688,6 +693,7 @@ class Game {
     this.projects.restore(data.projects);
     this.talk.restore(data.npcs, data.clock.day);
     this.story.restore(data.story);
+    this.objectives.restore(data.objectives);
     this.audio.volume = data.volume;
     for (const id of this.worlds.keys()) this.applyProjectsFor(id);
     this.camera.snapTo(this.player.x, this.player.focusY);
@@ -742,11 +748,41 @@ class Game {
     this.touch.update(dt, this.pointer, this.input);
   }
 
+  /**
+   * Reused rather than rebuilt. The getters are live, so this object always
+   * reflects the current world without anything being copied into it.
+   */
+  private readonly objectiveCtx: ObjectiveCtx = {
+    areasVisited: 0,
+    seen: new Set(),
+    hasStory: (id: string) => this.story.has(id as Beat),
+    projectCount: 0,
+    plots: [],
+  };
+
   private updateHudFade(dt: number): void {
+    this.objectiveCtx.areasVisited = this.worlds.size;
+    this.objectiveCtx.seen = this.seen;
+    this.objectiveCtx.projectCount = this.projects.doneCount;
+    this.objectiveCtx.plots = this.farm.all;
+
     const uiUp = this.dialogue.active || this.ledger.active || this.menu.active;
     this.hotbar.alpha = clamp(this.hotbar.alpha + (uiUp ? -dt * 6 : dt * 4), 0, this.hud.alpha);
     this.hotbar.update(dt, this.inventory);
     this.toast.update(dt);
+
+    // The card rides the hotbar's own fade. That is not laziness — it is the
+    // one value that already knows about every screen in the game, so the card
+    // can never end up sitting on top of the satchel, the pause menu or a line
+    // of dialogue without somebody having to remember to add it to a list.
+    this.objectiveCard.alpha = this.hotbar.alpha;
+    this.objectives.update(dt, this.objectiveCtx);
+    if (this.objectives.justCompleted) {
+      // The same quiet two-note rise the interface uses elsewhere. No fanfare.
+      this.audio.blip(7, 0.035);
+      this.saveGame(false);
+    }
+    this.objectiveCard.update(dt, this.objectives.rows());
   }
 
   private ledgerHooks() {
@@ -1229,6 +1265,13 @@ class Game {
     // The hotbar steps aside while the box is open; it is the one piece of UI
     // that would sit directly behind it.
     this.updateHudFade(dt);
+    // The card folds away if it is in the way, by the same click or tap the
+    // rest of the interface answers to.
+    if (this.objectiveCard.hitTest(this.pointer)) {
+      this.objectiveCard.collapsed = !this.objectiveCard.collapsed;
+      this.audio.blip(5, 0.03);
+    }
+
     // Tap a slot to hold it. The hotbar is the one piece of HUD a finger has a
     // reason to reach for, and hunting for a number row on a phone is not it.
     if (this.touch.enabled && this.pointer.released && !this.touch.consumes(this.pointer.x, this.pointer.y)) {
@@ -1426,6 +1469,15 @@ class Game {
     const uctx = renderer.uctx;
     drawVignette(uctx, this.vw, this.vh, 0.18 + clock.darkness * 0.12);
     this.hud.draw(uctx, clock);
+    // Under the pause button on touch, where there is one, so the two never
+    // share a corner. On a mouse the corner is free.
+    this.objectiveCard.draw(
+      uctx,
+      this.objectives.rows(),
+      this.vw,
+      this.time,
+      this.touch.enabled ? 34 : 0,
+    );
     this.hotbar.touch = this.touch.enabled;
     this.hotbar.draw(uctx, this.inventory, this.vw, this.vh, this.time);
     this.toast.draw(uctx, this.vw, this.vh);
