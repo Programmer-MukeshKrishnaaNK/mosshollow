@@ -50,6 +50,12 @@ const KEYS: DayKey[] = [
 
 export type Phase = 'dawn' | 'morning' | 'day' | 'evening' | 'dusk' | 'night';
 
+/**
+ * When a morning begins. The game opens here and sleeping returns here, so the
+ * two can never drift apart.
+ */
+export const MORNING_HOUR = 7.6;
+
 export class TimeOfDay {
   /** Minutes since midnight, 0-1440. */
   minutes: number;

@@ -22,6 +22,9 @@ export type Phase = 'idle' | 'out' | 'in';
 export class Transition {
   phase: Phase = 'idle';
   private t = 0;
+  /** This fade's durations. A doorway is brisk; a night should not be. */
+  private out = OUT;
+  private in_ = IN;
   /** Called once, at full black. */
   private onBlack: (() => void) | null = null;
 
@@ -35,15 +38,21 @@ export class Transition {
     // value, so it reads as a mechanism moving at a constant rate; a
     // smoothstep leaves and arrives gently and only hurries through the middle,
     // which is what a fade in a film does and why nobody notices one.
-    if (this.phase === 'out') return smooth(clamp(this.t / OUT, 0, 1));
-    if (this.phase === 'in') return 1 - smooth(clamp(this.t / IN, 0, 1));
+    if (this.phase === 'out') return smooth(clamp(this.t / this.out, 0, 1));
+    if (this.phase === 'in') return 1 - smooth(clamp(this.t / this.in_, 0, 1));
     return 0;
   }
 
-  begin(onBlack: () => void): boolean {
+  /**
+   * Returns false if a fade is already running, which is also what stops a
+   * held key from starting a second one.
+   */
+  begin(onBlack: () => void, outSec = OUT, inSec = IN): boolean {
     if (this.active) return false;
     this.phase = 'out';
     this.t = 0;
+    this.out = outSec;
+    this.in_ = inSec;
     this.onBlack = onBlack;
     return true;
   }
@@ -51,14 +60,14 @@ export class Transition {
   update(dt: number): void {
     if (this.phase === 'idle') return;
     this.t += dt;
-    if (this.phase === 'out' && this.t >= OUT) {
+    if (this.phase === 'out' && this.t >= this.out) {
       // Full black. Do the expensive thing here and nobody sees it.
       const fn = this.onBlack;
       this.onBlack = null;
       fn?.();
       this.phase = 'in';
       this.t = 0;
-    } else if (this.phase === 'in' && this.t >= IN) {
+    } else if (this.phase === 'in' && this.t >= this.in_) {
       this.phase = 'idle';
       this.t = 0;
     }

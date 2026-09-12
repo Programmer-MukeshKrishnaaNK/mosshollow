@@ -44,10 +44,16 @@ import type { Npc } from './entities/npc.ts';
 import * as Save from './systems/save.ts';
 import { Soundtrack } from './systems/soundtrack.ts';
 
+/**
+ * Evening begins here. Standing at your own door from this hour until the next
+ * morning ends the day; before it, the door is still just a door.
+ */
+const SLEEP_HOUR = 19;
+
 /** Served from `public/`, so the four megabytes are streamed and not inlined. */
 const MUSIC_URL = `${import.meta.env.BASE_URL}music/where-the-valley-sleeps.mp3`;
 import { FX, Particles } from './systems/particles.ts';
-import { TimeOfDay } from './systems/time.ts';
+import { MORNING_HOUR, TimeOfDay } from './systems/time.ts';
 import { Weather } from './systems/weather.ts';
 import { DebugOverlay } from './ui/debug.ts';
 import { Hotbar } from './ui/hotbar.ts';
@@ -65,7 +71,7 @@ class Game {
   private renderer: Renderer;
   private input = new Input();
   private pointer = new Pointer();
-  private clock = new TimeOfDay(7.6);
+  private clock = new TimeOfDay(MORNING_HOUR);
   private weather = new Weather();
   private particles = new Particles();
   private lighting!: Lighting;
@@ -544,6 +550,52 @@ class Game {
     location.reload();
   }
 
+  /**
+   * The window in which the door will take you to morning: from the evening
+   * through to the next day's first light.
+   *
+   * The small hours are included deliberately. The clock rolls the day over at
+   * midnight of its own accord, so somebody who stayed out until two is already
+   * on the new day — telling them it is too early to sleep would be absurd, and
+   * advancing the day again would cost them one they never lived.
+   */
+  private canSleep(): boolean {
+    const h = this.clock.hour;
+    return h >= SLEEP_HOUR || h < MORNING_HOUR;
+  }
+
+  /**
+   * Sleep. This deliberately does almost nothing: everything a new day means
+   * already happens in the day-rollover check in `update` — crops advance, the
+   * greetings reset, the game saves and the day is announced. All this has to
+   * do is move the clock and let that run. Doing any of it a second time here
+   * would be a second day system, and there must only ever be one.
+   */
+  private sleep(): void {
+    const beforeMidnight = this.clock.hour >= SLEEP_HOUR;
+    // The same fade the gates use, given longer to breathe. `begin` refuses
+    // while a fade is already running, which is also what stops a held key
+    // from sleeping twice.
+    const began = this.transition.begin(
+      () => {
+        this.clock.minutes = MORNING_HOUR * 60;
+        // Only when the clock has not already turned the day over by itself.
+        if (beforeMidnight) this.clock.day++;
+        // Whoever keeps hours should be where the new morning says, rather
+        // than walking there from where they stood last night.
+        const v = this.villages.get(this.areaId);
+        if (v) v.snapTo(this.clock.hour, this.weather.sky, new Set(this.projects.doneList));
+        this.player.vx = 0;
+        this.player.vy = 0;
+        this.particles.clear();
+      },
+      0.85,
+      1.25,
+    );
+    if (!began) return;
+    this.audio.blip(-11, 0.03);
+  }
+
   /** Walk through a gate. */
   private takeExit(exit: AreaExit): void {
     if (!AREAS[exit.to]) return;
@@ -817,6 +869,21 @@ class Game {
     // it and pressing E is how you find out that any of this exists.
     if (this.lookTarget?.key === 'board') {
       this.openLedger('build');
+      return;
+    }
+    // Your own door, once it has introduced itself. This has to sit *above* the
+    // inspect rule rather than below it: there is no tool action on a doorstep,
+    // so `kind` is null there and `(!seen || !kind)` stays true for ever — the
+    // house would keep reciting its one line and sleeping would be unreachable.
+    // The first press still gets the line; every press after it ends the day,
+    // or says why it cannot yet.
+    if (this.lookTarget?.key === 'house_door' && this.seen.has('house_door')) {
+      if (this.canSleep()) {
+        this.sleep();
+      } else {
+        this.toast.show("It's too early to sleep.");
+        this.audio.blip(-6, 0.03);
+      }
       return;
     }
     if (this.lookTarget && (!this.seen.has(this.lookTarget.key) || !kind)) {
@@ -1304,7 +1371,12 @@ class Game {
     drawTarget(ctx, brackX, brackY, camX, camY, this.targetKind, this.time);
     // Shown exactly when E would open the box — a hint that lies about what a
     // key does is worse than no hint at all.
-    const wouldRead = this.lookTarget && (!this.seen.has(this.lookTarget.key) || !this.targetKind);
+    // The door at night is the one place the prompt must appear even once the
+    // house has been read and a tool is in hand, or sleeping is a thing nobody
+    // finds out about.
+    const doorAtNight = this.lookTarget?.key === 'house_door' && this.canSleep();
+    const wouldRead =
+      this.lookTarget && (doorAtNight || !this.seen.has(this.lookTarget.key) || !this.targetKind);
     if (wouldRead && this.lookTarget && !this.dialogue.active) {
       drawLookHint(ctx, this.lookTarget.x, this.lookTarget.top - 5, camX, camY, this.time);
     }
